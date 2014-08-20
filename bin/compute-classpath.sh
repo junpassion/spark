@@ -137,4 +137,4 @@ if [ -n "$YARN_CONF_DIR" ]; then
   CLASSPATH="$CLASSPATH:$YARN_CONF_DIR"
 fi
 
-echo "$CLASSPATH"
+echo "$FWDIR/conf/:$CLASSPATH"
