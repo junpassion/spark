@@ -96,7 +96,7 @@ private[spark] object AkkaUtils extends Logging {
       s"""
       |akka.daemonic = on
       |akka.loggers = [""akka.event.slf4j.Slf4jLogger""]
-      |akka.stdout-loglevel = "ERROR"
+      |akka.stdout-loglevel = "DEBUG"
       |akka.jvm-exit-on-fatal-error = off
       |akka.remote.require-cookie = "$requireCookie"
       |akka.remote.secure-cookie = "$secureCookie"
@@ -112,10 +112,15 @@ private[spark] object AkkaUtils extends Logging {
       |akka.remote.netty.tcp.maximum-frame-size = ${akkaFrameSize}B
       |akka.remote.netty.tcp.execution-pool-size = $akkaThreads
       |akka.actor.default-dispatcher.throughput = $akkaBatchSize
-      |akka.log-config-on-start = $logAkkaConfig
-      |akka.remote.log-remote-lifecycle-events = $lifecycleEvents
-      |akka.log-dead-letters = $lifecycleEvents
-      |akka.log-dead-letters-during-shutdown = $lifecycleEvents
+      |akka.log-config-on-start = on
+      |akka.remote.log-remote-lifecycle-events = on
+      |akka.log-dead-letters = on
+      |akka.log-dead-letters-during-shutdown = on
+      |akka.actor.debug.receive = on
+      |akka.actor.debug.autoreceive = on
+      |akka.actor.debug.lifecycle = on
+      |akka.remote.log-sent-messages = on
+      |akka.remote.log-received-messages = on
       """.stripMargin))
 
     val actorSystem = ActorSystem(name, akkaConf)
