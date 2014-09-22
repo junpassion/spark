@@ -25,6 +25,7 @@ import org.apache.spark.deploy.master.{RecoveryState, SparkCuratorUtil}
 import org.apache.spark.{Logging, SparkConf, SparkContext}
 import org.json4s._
 import org.json4s.jackson.JsonMethods
+import org.scalatest.{BeforeAndAfterEach, BeforeAndAfter, FunSuite}
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -54,7 +55,8 @@ import scala.sys.process._
  *   - The docker images tagged spark-test-master and spark-test-worker are built from the
  *     docker/ directory. Run 'docker/spark-test/build' to generate these.
  */
-private[spark] object FaultToleranceTest extends App with Logging {
+/*
+private[spark] object FaultToleranceTest extends FunSuite with BeforeAndAfterEach with Logging {
 
   val conf = new SparkConf()
   val ZK_DIR = conf.get("spark.deploy.zookeeper.dir", "/spark")
@@ -76,7 +78,7 @@ private[spark] object FaultToleranceTest extends App with Logging {
 
   System.setProperty("spark.driver.host", "172.17.42.1") // default docker host ip
 
-  def afterEach() {
+  override def afterEach() {
     if (sc != null) {
       sc.stop()
       sc = null
@@ -337,10 +339,9 @@ private[spark] object FaultToleranceTest extends App with Logging {
     numFailed))
 }
 
-private[spark] class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile: File)
+class TestMasterInfo(val ip: String, val dockerId: DockerId, val logFile: File)
   extends Logging  {
 
-  implicit val formats = org.json4s.DefaultFormats
   var state: RecoveryState.Value = _
   var liveWorkerIPs: List[String] = _
   var numLiveApps = 0
@@ -379,7 +380,7 @@ private[spark] class TestMasterInfo(val ip: String, val dockerId: DockerId, val 
       format(ip, dockerId.id, logFile.getAbsolutePath, state)
 }
 
-private[spark] class TestWorkerInfo(val ip: String, val dockerId: DockerId, val logFile: File)
+class TestWorkerInfo(val ip: String, val dockerId: DockerId, val logFile: File)
   extends Logging {
 
   implicit val formats = org.json4s.DefaultFormats
@@ -392,7 +393,7 @@ private[spark] class TestWorkerInfo(val ip: String, val dockerId: DockerId, val 
     "[ip=%s, id=%s, logFile=%s]".format(ip, dockerId, logFile.getAbsolutePath)
 }
 
-private[spark] object SparkDocker {
+object SparkDocker {
   def startMaster(mountDir: String): TestMasterInfo = {
     val cmd = Docker.makeRunCmd("spark-test-master", mountDir = mountDir)
     val (ip, id, outFile) = startNode(cmd)
@@ -426,27 +427,4 @@ private[spark] object SparkDocker {
     (ip, dockerId, outFile)
   }
 }
-
-private[spark] class DockerId(val id: String) {
-  override def toString = id
-}
-
-private[spark] object Docker extends Logging {
-  def makeRunCmd(imageTag: String, args: String = "", mountDir: String = ""): ProcessBuilder = {
-    val mountCmd = if (mountDir != "") { " -v " + mountDir } else ""
-
-    val cmd = "docker run -privileged %s %s %s".format(mountCmd, imageTag, args)
-    logDebug("Run command: " + cmd)
-    cmd
-  }
-
-  def kill(dockerId: DockerId) : Unit = {
-    "docker kill %s".format(dockerId.id).!
-  }
-
-  def getLastProcessId: DockerId = {
-    var id: String = null
-    "docker ps -l -q".!(ProcessLogger(line => id = line))
-    new DockerId(id)
-  }
-}
+*/
