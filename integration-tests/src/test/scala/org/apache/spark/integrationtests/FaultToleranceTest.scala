@@ -15,24 +15,23 @@
  * limitations under the License.
  */
 
-package org.apache.spark.deploy
+package org.apache.spark.integrationtests
 
 import java.io._
 import java.net.URL
 import java.util.concurrent.TimeoutException
 
-import scala.collection.mutable.ListBuffer
-import scala.concurrent.{Await, future, promise}
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration._
-import scala.language.postfixOps
-import scala.sys.process._
-
+import org.apache.spark.deploy.master.{RecoveryState, SparkCuratorUtil}
+import org.apache.spark.{Logging, SparkConf, SparkContext}
 import org.json4s._
 import org.json4s.jackson.JsonMethods
 
-import org.apache.spark.{Logging, SparkConf, SparkContext}
-import org.apache.spark.deploy.master.{RecoveryState, SparkCuratorUtil}
+import scala.collection.mutable.ListBuffer
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, future, promise}
+import scala.language.postfixOps
+import scala.sys.process._
 
 /**
  * This suite tests the fault tolerance of the Spark standalone scheduler, mainly the Master.
@@ -192,6 +191,8 @@ private[spark] object FaultToleranceTest extends App with Logging {
         logInfo("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         logError("FAILED: " + name, e)
         logInfo("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        masters.foreach(_.kill())
+        workers.foreach(_.kill())
         sys.exit(1)
     }
     afterEach()
@@ -215,6 +216,7 @@ private[spark] object FaultToleranceTest extends App with Logging {
     // Counter-hack: Because of a hack in SparkEnv#create() that changes this
     // property, we need to reset it.
     System.setProperty("spark.driver.port", "0")
+    logInfo(s"The Spark masters are ${getMasterUrls(masters)}")
     sc = new SparkContext(getMasterUrls(masters), "fault-tolerance", containerSparkHome)
   }
 

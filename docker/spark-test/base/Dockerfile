@@ -18,6 +18,7 @@
 FROM ubuntu:precise
 
 RUN echo "deb http://archive.ubuntu.com/ubuntu precise main universe" > /etc/apt/sources.list
+RUN echo "deb http://archive.ubuntu.com/ubuntu precise-updates main universe" >> /etc/apt/sources.list
 
 # Upgrade package index
 RUN apt-get update
