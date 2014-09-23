@@ -121,14 +121,14 @@ class ZKFaultToleranceSuite extends FunSuite with Matchers with Logging {
         separator()
         println(s"Master ${master.container.id} log")
         separator()
-        println(master.container.getLog())
+        println(master.container.getLogs())
         println()
       }
       workers.foreach { worker =>
         separator()
         println(s"Worker ${worker.container.id} log")
         separator()
-        println(worker.container.getLog())
+        println(worker.container.getLogs())
         println()
       }
     }

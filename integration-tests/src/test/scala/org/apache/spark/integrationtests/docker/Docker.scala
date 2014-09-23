@@ -56,7 +56,7 @@ object Docker extends Logging {
     runningDockerContainers -= dockerId
   }
 
-  def getLog(dockerId: DockerId): String = {
+  def getLogs(dockerId: DockerId): String = {
     s"docker logs ${dockerId.id}".!!
   }
 
