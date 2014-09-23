@@ -36,8 +36,8 @@ object Docker extends Logging {
 
   def launchContainer(imageTag: String,
                       args: String = "",
-                      mountDir: String = ""): DockerContainer = {
-    val mountCmd = if (mountDir != "") { " -v " + mountDir } else ""
+                      mountDirs: Seq[(String, String)] = Seq.empty): DockerContainer = {
+    val mountCmd = mountDirs.map{ case (s, t) => s"-v $s:$t" }.mkString(" ")
 
     val id = new DockerId("docker run --privileged -d %s %s %s".format(mountCmd, imageTag, args).!!)
     try {

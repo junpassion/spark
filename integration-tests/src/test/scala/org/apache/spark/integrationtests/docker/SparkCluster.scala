@@ -9,7 +9,10 @@ import scala.io.Source
 class SparkMaster {
   private implicit val formats = org.json4s.DefaultFormats
 
-  val container = Docker.launchContainer("spark-test-master", mountDir = Docker.sparkHomeMountDir)
+  val mountDirs = Seq(
+    Docker.sparkHomeMountDir -> "/opt/spark",
+    Docker.sparkHomeMountDir + "/conf" -> "/opt/sparkconf")
+  val container = Docker.launchContainer("spark-test-master", mountDirs = mountDirs)
 
   var state: RecoveryState.Value = _
   var liveWorkerIPs: Seq[String] = _
@@ -55,8 +58,11 @@ class SparkMaster {
 
 
 class SparkWorker(masters: Seq[String]) {
+  val mountDirs = Seq(
+    Docker.sparkHomeMountDir -> "/opt/spark",
+    Docker.sparkHomeMountDir + "/conf" -> "/opt/sparkconf")
   val container = Docker.launchContainer("spark-test-worker",
-    args = masters.mkString(","), mountDir = Docker.sparkHomeMountDir)
+    args = masters.mkString(","), mountDirs = mountDirs)
 
   def waitForUI(timeoutMillis: Int): Unit = {
     val start = System.currentTimeMillis()
