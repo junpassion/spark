@@ -24,14 +24,14 @@ import scala.language.postfixOps
 import scala.sys.process._
 
 object Docker extends Logging {
-  private val runningDockerContainers = new mutable.HashSet[DockerContainer]()
+  private val runningDockerContainers = new mutable.HashSet[DockerId]()
 
   def registerContainer(container: DockerContainer) = this.synchronized {
-    runningDockerContainers += container
+    runningDockerContainers += container.id
   }
 
   def killAllLaunchedContainers() = this.synchronized {
-    runningDockerContainers.foreach(_.kill())
+    runningDockerContainers.foreach(kill)
   }
 
   def launchContainer(imageTag: String,
@@ -49,8 +49,9 @@ object Docker extends Logging {
     }
   }
 
-  def kill(dockerId: DockerId) {
+  def kill(dockerId: DockerId) = this.synchronized {
     "docker kill %s".format(dockerId.id).!
+    runningDockerContainers -= dockerId
   }
 
   def getLastProcessId: DockerId = {

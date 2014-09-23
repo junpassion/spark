@@ -18,9 +18,9 @@
 package org.apache.spark.integrationtests.docker
 
 import org.apache.spark.deploy.master.RecoveryState
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.{Matchers, BeforeAndAfterEach, FunSuite}
 
-class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach {
+class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers {
 
   override def afterEach(): Unit = {
     Docker.killAllLaunchedContainers()
@@ -33,15 +33,21 @@ class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach {
   }
 
   test("basic spark cluster") {
+    // Start a master
     val master = new SparkMaster()
-    println(master.container.ip)
-    println(master.container.id)
-    println(s"http://${master.container.ip}:8080")
-    Thread.sleep(100000)
+    master.waitForUI(10000)
     master.updateState()
     assert(master.numLiveApps === 0)
     assert(master.state === RecoveryState.ALIVE)
     assert(master.liveWorkerIPs.isEmpty)
+
+    // Add a worker
+    val worker = new SparkWorker(Seq(master.masterUrl))
+    worker.waitForUI(10000)
+    master.updateState()
+    master.liveWorkerIPs should be (Seq(worker.container.ip))
+
+    worker.kill()
     master.kill()
   }
 }
