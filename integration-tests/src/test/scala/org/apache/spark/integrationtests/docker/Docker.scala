@@ -59,6 +59,8 @@ object Docker extends Logging {
     "docker ps -l -q".!(ProcessLogger(line => id = line))
     new DockerId(id)
   }
+
+  def dockerHostIp: String = "172.17.42.1" // default docker host ip
 }
 
 class DockerId(val id: String) extends AnyVal {

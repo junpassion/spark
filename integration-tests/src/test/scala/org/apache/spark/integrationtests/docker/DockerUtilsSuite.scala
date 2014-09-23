@@ -17,11 +17,16 @@
 
 package org.apache.spark.integrationtests.docker
 
+import org.scalatest.concurrent.Timeouts
+import org.scalatest.time.SpanSugar._
+
+import org.apache.curator.framework.CuratorFramework
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.master.RecoveryState
+import org.apache.zookeeper.server.ZooKeeperServer
 import org.scalatest.{Matchers, BeforeAndAfterEach, FunSuite}
 
-class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers {
+class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers with Timeouts {
 
   override def afterEach(): Unit = {
     Docker.killAllLaunchedContainers()
@@ -51,5 +56,16 @@ class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers {
 
     worker.kill()
     master.kill()
+  }
+
+  test("basic zookeeper") {
+    val zk = new ZooKeeperMaster()
+    var client: CuratorFramework = null
+    try {
+      client = zk.newCuratorFramework()
+      assert(client.getZookeeperClient.blockUntilConnectedOrTimedOut())
+    } finally {
+      client.close()
+    }
   }
 }
