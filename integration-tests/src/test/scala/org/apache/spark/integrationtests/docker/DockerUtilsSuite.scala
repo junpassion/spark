@@ -17,14 +17,11 @@
 
 package org.apache.spark.integrationtests.docker
 
-import org.scalatest.concurrent.Timeouts
-import org.scalatest.time.SpanSugar._
-
 import org.apache.curator.framework.CuratorFramework
 import org.apache.spark.SparkConf
 import org.apache.spark.deploy.master.RecoveryState
-import org.apache.zookeeper.server.ZooKeeperServer
-import org.scalatest.{Matchers, BeforeAndAfterEach, FunSuite}
+import org.scalatest.concurrent.Timeouts
+import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
 
 class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers with Timeouts {
 
