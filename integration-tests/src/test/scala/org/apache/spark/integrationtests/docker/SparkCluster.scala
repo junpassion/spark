@@ -1,24 +1,41 @@
 package org.apache.spark.integrationtests.docker
 
+import java.io.File
+import java.nio.charset.Charset
+
+import com.google.common.io.Files
+import org.apache.spark.SparkConf
 import org.apache.spark.deploy.master.RecoveryState
 import org.json4s.jackson.JsonMethods
 
 import scala.io.Source
 
+private[docker] abstract class SparkDeployBase(conf: SparkConf) {
 
-class SparkMaster {
-  private implicit val formats = org.json4s.DefaultFormats
+  private val sparkHome: String = {
+    val sparkHome = System.getenv("SPARK_HOME")
+    assert(sparkHome != null, "Run with a valid SPARK_HOME")
+    sparkHome
+  }
 
-  val mountDirs = Seq(
-    Docker.sparkHomeMountDir -> "/opt/spark",
-    Docker.sparkHomeMountDir + "/conf" -> "/opt/sparkconf")
-  val container = Docker.launchContainer("spark-test-master", mountDirs = mountDirs)
+  private val confDir = {
+    val temp = File.createTempFile("spark-home-temp", "",
+      new File(sparkHome, "integration-tests/target/"))
+    temp.delete()
+    temp.mkdir()
+    temp.deleteOnExit()
+    temp
+  }
 
-  var state: RecoveryState.Value = _
-  var liveWorkerIPs: Seq[String] = _
-  var numLiveApps = -1
+  // Save the SparkConf as spark-defaults.conf
+  Files.write(conf.getAll.map{ case (k, v) => k + ' ' + v }.mkString("\n"),
+    new File(confDir, "spark-defaults.conf"), Charset.forName("UTF-8"))
 
-  def masterUrl: String = s"spark://${container.ip}:7077"
+  protected val mountDirs = Seq(
+    sparkHome -> "/opt/spark",
+    confDir.getAbsolutePath -> "/opt/sparkconf")
+
+  val container: DockerContainer
 
   def waitForUI(timeoutMillis: Int): Unit = {
     val start = System.currentTimeMillis()
@@ -32,6 +49,23 @@ class SparkMaster {
       }
     }
   }
+
+  def kill() {
+    container.kill()
+  }
+}
+
+
+class SparkMaster(conf: SparkConf) extends SparkDeployBase(conf) {
+  private implicit val formats = org.json4s.DefaultFormats
+
+  val container = Docker.launchContainer("spark-test-master", mountDirs = mountDirs)
+
+  var state: RecoveryState.Value = _
+  var liveWorkerIPs: Seq[String] = _
+  var numLiveApps = -1
+
+  def masterUrl: String = s"spark://${container.ip}:7077"
 
   def updateState(): Unit = {
     val json =
@@ -50,34 +84,12 @@ class SparkMaster {
     val stateString = status.extract[String]
     state = RecoveryState.values.filter(state => state.toString == stateString).head
   }
-
-  def kill() {
-    container.kill()
-  }
 }
 
 
-class SparkWorker(masters: Seq[String]) {
-  val mountDirs = Seq(
-    Docker.sparkHomeMountDir -> "/opt/spark",
-    Docker.sparkHomeMountDir + "/conf" -> "/opt/sparkconf")
+class SparkWorker(conf: SparkConf, masters: Seq[String]) extends SparkDeployBase(conf) {
+
   val container = Docker.launchContainer("spark-test-worker",
     args = masters.mkString(","), mountDirs = mountDirs)
 
-  def waitForUI(timeoutMillis: Int): Unit = {
-    val start = System.currentTimeMillis()
-    while ((System.currentTimeMillis() - start) < timeoutMillis) {
-      try {
-        Source.fromURL(s"http://${container.ip}:8080/json")
-        return
-      } catch {
-        case ce: java.net.ConnectException =>
-          Thread.sleep(100)
-      }
-    }
-  }
-
-  def kill() {
-    container.kill()
-  }
 }

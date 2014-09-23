@@ -59,14 +59,6 @@ object Docker extends Logging {
     "docker ps -l -q".!(ProcessLogger(line => id = line))
     new DockerId(id)
   }
-
-  def sparkHomeMountDir: String = {
-    val sparkHome = System.getenv("SPARK_HOME")
-    assert(sparkHome != null, "Run with a valid SPARK_HOME")
-
-    val containerSparkHome = "/opt/spark"
-    "%s:%s".format(sparkHome, containerSparkHome)
-  }
 }
 
 class DockerId(val id: String) extends AnyVal {

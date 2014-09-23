@@ -17,6 +17,7 @@
 
 package org.apache.spark.integrationtests.docker
 
+import org.apache.spark.SparkConf
 import org.apache.spark.deploy.master.RecoveryState
 import org.scalatest.{Matchers, BeforeAndAfterEach, FunSuite}
 
@@ -33,8 +34,9 @@ class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers {
   }
 
   test("basic spark cluster") {
+    val conf = new SparkConf()
     // Start a master
-    val master = new SparkMaster()
+    val master = new SparkMaster(conf)
     master.waitForUI(10000)
     master.updateState()
     assert(master.numLiveApps === 0)
@@ -42,7 +44,7 @@ class DockerUtilsSuite extends FunSuite with BeforeAndAfterEach with Matchers {
     assert(master.liveWorkerIPs.isEmpty)
 
     // Add a worker
-    val worker = new SparkWorker(Seq(master.masterUrl))
+    val worker = new SparkWorker(conf, Seq(master.masterUrl))
     worker.waitForUI(10000)
     master.updateState()
     master.liveWorkerIPs should be (Seq(worker.container.ip))
