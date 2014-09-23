@@ -26,8 +26,8 @@ import scala.sys.process._
 object Docker extends Logging {
   private val runningDockerContainers = new mutable.HashSet[DockerId]()
 
-  def registerContainer(container: DockerContainer) = this.synchronized {
-    runningDockerContainers += container.id
+  def registerContainer(containerId: DockerId) = this.synchronized {
+    runningDockerContainers += containerId
   }
 
   def killAllLaunchedContainers() = this.synchronized {
@@ -40,6 +40,7 @@ object Docker extends Logging {
     val mountCmd = mountDirs.map{ case (s, t) => s"-v $s:$t" }.mkString(" ")
 
     val id = new DockerId("docker run --privileged -d %s %s %s".format(mountCmd, imageTag, args).!!)
+    registerContainer(id)
     try {
       new DockerContainer(id)
     } catch {

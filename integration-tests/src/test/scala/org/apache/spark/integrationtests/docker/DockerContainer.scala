@@ -35,6 +35,4 @@ class DockerContainer(val id: DockerId) {
   def kill() {
     Docker.kill(this.id)
   }
-
-  Docker.registerContainer(this)
 }

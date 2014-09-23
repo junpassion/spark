@@ -17,23 +17,17 @@
 
 package org.apache.spark.integrationtests
 
-import java.io._
-import java.net.URL
-import java.util.concurrent.TimeoutException
 
-import org.apache.spark.deploy.master.{RecoveryState, SparkCuratorUtil}
+import org.apache.spark.deploy.master.RecoveryState
 import org.apache.spark.integrationtests.docker.{ZooKeeperMaster, SparkWorker, SparkMaster, Docker}
 import org.apache.spark.{Logging, SparkConf, SparkContext}
-import org.json4s._
-import org.json4s.jackson.JsonMethods
-import org.scalatest.{BeforeAndAfterEach, BeforeAndAfter, FunSuite}
+import org.scalatest.{Matchers, BeforeAndAfterEach, FunSuite}
+import org.scalatest.concurrent.Eventually._
+import org.scalatest.concurrent.Timeouts._
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.concurrent.{Await, future, promise}
 import scala.language.postfixOps
-import scala.sys.process._
 
 /**
  * This suite tests the fault tolerance of the Spark standalone scheduler, mainly the Master.
@@ -57,7 +51,7 @@ import scala.sys.process._
  *     docker/ directory. Run 'docker/spark-test/build' to generate these.
  */
 
-class ZKFaultToleranceSuite extends FunSuite with BeforeAndAfterEach with Logging {
+class ZKFaultToleranceSuite extends FunSuite with BeforeAndAfterEach with Matchers with Logging {
 
   var cluster: HASparkCluster = _
   var sc: SparkContext = _
@@ -68,6 +62,7 @@ class ZKFaultToleranceSuite extends FunSuite with BeforeAndAfterEach with Loggin
     val conf: SparkConf = new SparkConf()
     conf.set("spark.deploy.recoveryMode", "ZOOKEEPER")
     conf.set("spark.deploy.zookeeper.url", zookeeper.zookeeperUrl)
+    conf.set("spark.executor.memory", "256m")
     val masters = ListBuffer[SparkMaster]()
     val workers = ListBuffer[SparkWorker]()
 
@@ -84,22 +79,29 @@ class ZKFaultToleranceSuite extends FunSuite with BeforeAndAfterEach with Loggin
       workers.foreach(_.waitForUI(10000))
     }
 
+    def updateState() = {
+      masters.foreach(_.updateState())
+    }
+
     def createSparkContext(): SparkContext = {
       // Counter-hack: Because of a hack in SparkEnv#create() that changes this
       // property, we need to reset it.
       System.setProperty("spark.driver.port", "0")
-      val masterUrls = masters.map(_.masterUrl).mkString(",")
+      val masterUrls = "spark://" + masters.map(_.masterUrl.stripPrefix("spark://")).mkString(",")
       new SparkContext(masterUrls, "fault-tolerance", conf)
     }
 
     def killLeader() {
       logInfo(">>>>> KILL LEADER <<<<<")
-      masters.foreach(_.updateState())
-      val leaders = masters.filter(_.state == RecoveryState.ALIVE)
-      assert(leaders.size === 1)
-      val leader = leaders.head
+      val leader = getLeader()
       masters -= leader
       leader.kill()
+    }
+
+    def getLeader(): SparkMaster = {
+      val leaders = masters.filter(_.state == RecoveryState.ALIVE)
+      assert(leaders.size === 1)
+      leaders.head
     }
 
     def killAll() {
@@ -128,81 +130,31 @@ class ZKFaultToleranceSuite extends FunSuite with BeforeAndAfterEach with Loggin
    */
   def assertValidClusterState(cluster: HASparkCluster) = {
     logInfo(">>>>> ASSERT VALID CLUSTER STATE <<<<<")
-    assertUsable()
-    var numAlive = 0
-    var numStandby = 0
-    var numLiveApps = 0
-    var liveWorkerIPs: Seq[String] = List()
 
-    def stateValid(): Boolean = {
-      (cluster.workers.map(_.container.ip) -- liveWorkerIPs).isEmpty &&
-        numAlive == 1 && numStandby == cluster.masters.size - 1 && numLiveApps >= 1
+    // Check that the cluster is usable (tests client retry logic, so this may take a long
+    // time if the cluster is recovering)
+    failAfter(120 seconds) {
+      val res = sc.parallelize(0 to 10).collect()
+      res.toList should be (0 to 10)
     }
 
-    val f = future {
-      try {
-        while (!stateValid()) {
-          Thread.sleep(1000)
-
-          numAlive = 0
-          numStandby = 0
-          numLiveApps = 0
-
-          cluster.masters.foreach(_.updateState())
-
-          for (master <- cluster.masters) {
-            master.state match {
-              case RecoveryState.ALIVE =>
-                numAlive += 1
-                liveWorkerIPs = master.liveWorkerIPs
-              case RecoveryState.STANDBY =>
-                numStandby += 1
-              case _ => // ignore
-            }
-
-            numLiveApps += master.numLiveApps
-          }
-        }
-        true
-      } catch {
-        case e: Exception =>
-          logError("assertValidClusterState() had exception", e)
-          false
-      }
-    }
-
-    try {
-      assert(Await.result(f, 120 seconds))
-    } catch {
-      case e: TimeoutException =>
-        logError("Master states: " + cluster.masters.map(_.state))
-        logError("Num apps: " + numLiveApps)
-        logError("IPs expected: " + cluster.workers.map(_.container.ip) + " / found: " + liveWorkerIPs)
-        throw new RuntimeException("Failed to get into acceptable cluster state after 2 min.", e)
-    }
+    // Check that the cluster eventually reaches a valid state:
+    //eventually (timeout(120 seconds), interval(1 seconds)) {
+      cluster.updateState()
+      logDebug("Checking for valid cluster state")
+      // There should only be one leader
+      val (leaders, nonLeaders) = cluster.masters.partition(_.state == RecoveryState.ALIVE)
+      leaders.size should be (1)
+      // Any master that is not the leader should be in STANDBY mode:
+      nonLeaders.map(_.state).toSet should (be (Set()) or be (Set(RecoveryState.STANDBY)))
+      // The workers should be alive and registered with the leader:
+      cluster.workers.map(_.container.ip).toSet should be (cluster.getLeader().liveWorkerIPs.toSet)
+      // At least one application / driver should be alive
+      cluster.getLeader().numLiveApps should be >= 1
+    //}
   }
 
   def delay(secs: Duration = 5.seconds) = Thread.sleep(secs.toMillis)
-
-  /** This includes Client retry logic, so it may take a while if the cluster is recovering. */
-  def assertUsable() = {
-    val f = future {
-      try {
-        val res = sc.parallelize(0 until 10).collect()
-        assert(res.toList === (0 until 10))
-        true
-      } catch {
-        case e: Exception =>
-          logError("assertUsable() had exception", e)
-          e.printStackTrace()
-          false
-      }
-    }
-
-    // Avoid waiting indefinitely (e.g., we could register but get no executors).
-    assert(Await.result(f, 120 seconds))
-  }
-
 
   test("sanity-basic") {
     cluster.addMasters(1)
