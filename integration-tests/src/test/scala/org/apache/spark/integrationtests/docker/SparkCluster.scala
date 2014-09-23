@@ -10,7 +10,7 @@ import org.json4s.jackson.JsonMethods
 
 import scala.io.Source
 
-private[docker] abstract class SparkDeployBase(conf: SparkConf) {
+private[docker] abstract class SparkDeployBase(conf: SparkConf, sparkEnv: Seq[(String, String)]) {
 
   private val sparkHome: String = {
     val sparkHome = System.getenv("SPARK_HOME")
@@ -30,6 +30,10 @@ private[docker] abstract class SparkDeployBase(conf: SparkConf) {
   // Save the SparkConf as spark-defaults.conf
   Files.write(conf.getAll.map{ case (k, v) => k + ' ' + v }.mkString("\n"),
     new File(confDir, "spark-defaults.conf"), Charset.forName("UTF-8"))
+
+  // Setup the exports in spark-env.sh
+  Files.write(sparkEnv.map{ case (k, v) => s"""export $k="$v""""}.mkString("\n"),
+    new File(confDir, "spark-env.sh"), Charset.forName("UTF-8"))
 
   protected val mountDirs = Seq(
     sparkHome -> "/opt/spark",
@@ -56,7 +60,8 @@ private[docker] abstract class SparkDeployBase(conf: SparkConf) {
 }
 
 
-class SparkMaster(conf: SparkConf) extends SparkDeployBase(conf) {
+class SparkMaster(conf: SparkConf,
+                  sparkEnv: Seq[(String, String)]) extends SparkDeployBase(conf, sparkEnv) {
   private implicit val formats = org.json4s.DefaultFormats
 
   val container = Docker.launchContainer("spark-test-master", mountDirs = mountDirs)
@@ -87,9 +92,11 @@ class SparkMaster(conf: SparkConf) extends SparkDeployBase(conf) {
 }
 
 
-class SparkWorker(conf: SparkConf, masters: Seq[String]) extends SparkDeployBase(conf) {
+class SparkWorker(conf: SparkConf,
+                  sparkEnv: Seq[(String, String)],
+                  masterUrl: String) extends SparkDeployBase(conf, sparkEnv) {
 
   val container = Docker.launchContainer("spark-test-worker",
-    args = masters.mkString(","), mountDirs = mountDirs)
+    args = masterUrl, mountDirs = mountDirs)
 
 }

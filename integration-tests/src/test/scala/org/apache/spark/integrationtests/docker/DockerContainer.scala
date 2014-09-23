@@ -32,6 +32,10 @@ class DockerContainer(val id: DockerId) {
 
   val ip: String = (inspectJson \ "NetworkSettings" \ "IPAddress").extractOpt[String].get
 
+  def getLog(): String = {
+    Docker.getLog(this.id)
+  }
+
   def kill() {
     Docker.kill(this.id)
   }

@@ -39,7 +39,8 @@ object Docker extends Logging {
                       mountDirs: Seq[(String, String)] = Seq.empty): DockerContainer = {
     val mountCmd = mountDirs.map{ case (s, t) => s"-v $s:$t" }.mkString(" ")
 
-    val id = new DockerId("docker run --privileged -d %s %s %s".format(mountCmd, imageTag, args).!!)
+    val id =
+      new DockerId("docker run --privileged -d %s %s %s".format(mountCmd, imageTag, args).!!.trim)
     registerContainer(id)
     try {
       new DockerContainer(id)
@@ -55,10 +56,8 @@ object Docker extends Logging {
     runningDockerContainers -= dockerId
   }
 
-  def getLastProcessId: DockerId = {
-    var id: String = null
-    "docker ps -l -q".!(ProcessLogger(line => id = line))
-    new DockerId(id)
+  def getLog(dockerId: DockerId): String = {
+    s"docker logs ${dockerId.id}".!!
   }
 
   def dockerHostIp: String = "172.17.42.1" // default docker host ip
