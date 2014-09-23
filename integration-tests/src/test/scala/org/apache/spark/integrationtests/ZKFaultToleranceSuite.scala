@@ -30,32 +30,12 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
- * This suite tests the fault tolerance of the Spark standalone scheduler, mainly the Master.
- * In order to mimic a real distributed cluster more closely, Docker is used.
- * Execute using
- * ./bin/spark-class org.apache.spark.deploy.FaultToleranceTest
- *
- * Make sure that that the environment includes the following properties in SPARK_DAEMON_JAVA_OPTS
- * *and* SPARK_JAVA_OPTS:
- *   - spark.deploy.recoveryMode=ZOOKEEPER
- *   - spark.deploy.zookeeper.url=172.17.42.1:2181
- * Note that 172.17.42.1 is the default docker ip for the host and 2181 is the default ZK port.
- *
- * In case of failure, make sure to kill off prior docker containers before restarting:
- *   docker kill $(docker ps -q)
- *
- * Unfortunately, due to the Docker dependency this suite cannot be run automatically without a
- * working installation of Docker. In addition to having Docker, the following are assumed:
- *   - Docker can run without sudo (see http://docs.docker.io/en/latest/use/basics/)
- *   - The docker images tagged spark-test-master and spark-test-worker are built from the
- *     docker/ directory. Run 'docker/spark-test/build' to generate these.
+ * This suite tests the fault-tolerance of the Spark standalone cluster manager and scheduler.
  */
-
 class ZKFaultToleranceSuite extends FunSuite with Matchers with Logging {
 
   var cluster: HASparkCluster = _
   var sc: SparkContext = _
-  //System.setProperty("spark.driver.host", Docker.dockerHostIp)
 
   class HASparkCluster {
     val zookeeper: ZooKeeperMaster = new ZooKeeperMaster()

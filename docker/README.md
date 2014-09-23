@@ -1,7 +1,8 @@
-Spark docker files
-===========
+Spark Docker files
+==================
 
-Drawn from Matt Massie's docker files (https://github.com/massie/dockerfiles),
+
+Based on Matt Massie's docker files (https://github.com/massie/dockerfiles),
 as well as some updates from Andre Schumacher (https://github.com/AndreSchumacher/docker).
 
-Tested with Docker version 0.8.1.
+Tested with Docker version 1.2.0, build fa7b24f.
