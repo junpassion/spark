@@ -17,7 +17,9 @@
 
 package org.apache.spark.deploy
 
+import java.lang.reflect.Field
 import java.security.PrivilegedExceptionAction
+import java.util.concurrent.ConcurrentHashMap
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapred.JobConf
@@ -98,7 +100,55 @@ class SparkHadoopUtil extends Logging {
       hadoopConf.set("io.file.buffer.size", bufferSize)
     }
 
-    hadoopConf
+    improveThreadSafety(hadoopConf)
+  }
+
+  /**
+   * Wrap a Hadoop Configuration object to make it more threadsafe.  See SPARK-2546 for
+   * an extensive discussion of how Configuration's lack of thread safety causes problems
+   * and why we have to resort to reflection-based hacks to add thread safety.
+   */
+  private[spark] def improveThreadSafety(conf: Configuration): Configuration = {
+    val confCopy = new Configuration(conf)
+
+    def getDeclaredField(obj: Object, name: String): Field = {
+      var cls: Class[_] = obj.getClass
+      while (cls != null) {
+        try {
+          return cls.getDeclaredField(name)
+        } catch {
+          case e: NoSuchFieldException =>
+            cls = cls.getSuperclass
+        }
+      }
+      throw new NoSuchFieldException(s"Could not find field $name")
+    }
+
+    def wrapField[T](obj: Object, name: String)(wrapper: T => T) {
+      try {
+        val field = getDeclaredField(obj, name)
+        val originalAccessibility = field.isAccessible
+        try {
+          field.setAccessible(true)
+          val value: T = field.get(obj).asInstanceOf[T]
+          if (value != null) {
+            val updatedValue = wrapper(value)
+            field.set(obj, updatedValue)
+          }
+        } finally {
+          field.setAccessible(originalAccessibility)
+        }
+      } catch {
+        case e: Exception =>
+          logWarning(s"Exception when wrapping Configuration field $name for thread safety", e)
+      }
+    }
+
+    wrapField[java.util.Map[String, Array[String]]](confCopy, "updatingResource") { existing =>
+      new ConcurrentHashMap[String, Array[String]](existing)
+    }
+
+    confCopy
   }
 
   /**
