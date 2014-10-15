@@ -19,10 +19,12 @@ package org.apache.spark.util.io
 
 import scala.util.Random
 
+import org.scalacheck.Gen
 import org.scalatest.FunSuite
+import org.scalatest.prop.GeneratorDrivenPropertyChecks
 
 
-class ByteArrayChunkOutputStreamSuite extends FunSuite {
+class ByteArrayChunkOutputStreamSuite extends FunSuite with GeneratorDrivenPropertyChecks {
 
   test("empty output") {
     val o = new ByteArrayChunkOutputStream(1024)
@@ -105,5 +107,23 @@ class ByteArrayChunkOutputStreamSuite extends FunSuite {
     assert(arrays(0).toSeq === ref.slice(0, 10))
     assert(arrays(1).toSeq === ref.slice(10, 20))
     assert(arrays(2).toSeq === ref.slice(20, 30))
+  }
+
+  test("chunking and reassembly are inverses") {
+    val validChunkSizes = for (n <- Gen.choose(1, 10)) yield n
+    val validDataSizes = for (n <- Gen.choose(1, 101)) yield n
+    forAll (validChunkSizes, validDataSizes) { (chunkSize: Int, dataSize: Int) =>
+      whenever (chunkSize > 0) {
+        val inputData: Array[Byte] = new Array[Byte](dataSize)
+        Random.nextBytes(inputData)
+        val o = new ByteArrayChunkOutputStream(chunkSize)
+        o.write(inputData)
+        o.close()
+        val chunks = o.toArrays
+        val unchunked = chunks.flatten
+        assert(unchunked.size === inputData.size)
+        assert(unchunked === inputData)
+      }
+    }
   }
 }

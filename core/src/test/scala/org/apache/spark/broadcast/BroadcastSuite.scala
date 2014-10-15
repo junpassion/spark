@@ -17,13 +17,16 @@
 
 package org.apache.spark.broadcast
 
+import scala.util.Random
+
+import org.scalacheck.Gen
 import org.scalatest.FunSuite
+import org.scalatest.prop.GeneratorDrivenPropertyChecks
 
-import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext, SparkException}
 import org.apache.spark.storage._
+import org.apache.spark.{LocalSparkContext, SparkConf, SparkContext, SparkException}
 
-
-class BroadcastSuite extends FunSuite with LocalSparkContext {
+class BroadcastSuite extends FunSuite with LocalSparkContext with GeneratorDrivenPropertyChecks {
 
   private val httpConf = broadcastConf("HttpBroadcastFactory")
   private val torrentConf = broadcastConf("TorrentBroadcastFactory")
@@ -84,6 +87,21 @@ class BroadcastSuite extends FunSuite with LocalSparkContext {
     assert(results.collect().toSet === (1 to numSlaves).map(x => (x, 10)).toSet)
   }
 
+  test("TorrentBroadcast's blockifyObject and unblockifyObject are inverses") {
+    val conf = torrentConf.clone
+    conf.set("spark.broadcast.blockSize", "1024")
+    sc = new SparkContext("local", "test", conf)
+    val objects = for (size <- Gen.choose(1, 1024 * 10)) yield {
+      val data: Array[Byte] = new Array[Byte](size)
+      Random.nextBytes(data)
+      data
+    }
+    forAll (objects) { (obj: Array[Byte]) =>
+      import org.apache.spark.broadcast.TorrentBroadcast._
+      val broadcasted: Array[Byte] = unBlockifyObject(blockifyObject(obj))
+      assert(broadcasted === obj)
+    }
+  }
   test("Unpersisting HttpBroadcast on executors only in local mode") {
     testUnpersistHttpBroadcast(distributed = false, removeFromDriver = false)
   }
