@@ -56,6 +56,9 @@ class SparkHadoopWriter(@transient jobConf: JobConf)
   @transient private var jobContext: JobContext = null
   @transient private var taskContext: TaskAttemptContext = null
 
+  /**
+   * Called on the driver to initialize this writer.
+   */
   def preSetup() {
     setIDs(0, 0, 0)
     HadoopRDD.addLocalConfiguration("", 0, 0, 0, conf.value)
@@ -64,7 +67,9 @@ class SparkHadoopWriter(@transient jobConf: JobConf)
     getOutputCommitter().setupJob(jCtxt)
   }
 
-
+  /**
+   * Called on executors to configure individual tasks' writers.
+   */
   def setup(jobid: Int, splitid: Int, attemptid: Int) {
     setIDs(jobid, splitid, attemptid)
     HadoopRDD.addLocalConfiguration(new SimpleDateFormat("yyyyMMddHHmm").format(now),
@@ -72,6 +77,9 @@ class SparkHadoopWriter(@transient jobConf: JobConf)
   }
 
   def open() {
+    if (writer != null) {
+      throw new IOException("Called open() on SparkHadoopWriter that is already open")
+    }
     val numfmt = NumberFormat.getInstance()
     numfmt.setMinimumIntegerDigits(5)
     numfmt.setGroupingUsed(false)
@@ -158,6 +166,9 @@ class SparkHadoopWriter(@transient jobConf: JobConf)
     taskContext
   }
 
+  /**
+   * Configure this writer to use the specified IDs when generating Hadoop job ids, task ids, etc.
+   */
   private def setIDs(jobid: Int, splitid: Int, attemptid: Int) {
     jobID = jobid
     splitID = splitid
