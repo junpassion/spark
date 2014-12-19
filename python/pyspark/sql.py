@@ -28,6 +28,7 @@ public classes of Spark SQL:
     - L{HiveContext}
       Main entry point for accessing data stored in Apache Hive..
 """
+from __future__ import print_function
 
 import itertools
 import decimal
@@ -944,7 +945,7 @@ def _infer_schema_type(obj, dataType):
         return ArrayType(eType, True)
 
     elif isinstance(dataType, MapType):
-        k, v = obj.iteritems().next()
+        k, v = next(obj.iteritems())
         return MapType(_infer_schema_type(k, dataType.keyType),
                        _infer_schema_type(v, dataType.valueType))
 
@@ -1946,7 +1947,7 @@ class SchemaRDD(RDD):
 
     def printSchema(self):
         """Prints out the schema in the tree format."""
-        print self.schemaString()
+        print(self.schemaString())
 
     def count(self):
         """Return the number of elements in this RDD.

@@ -32,11 +32,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
 from pyspark.resultiterable import ResultIterable
+from functools import reduce
 
 
 def _do_python_join(rdd, other, numPartitions, dispatch):
-    vs = rdd.map(lambda (k, v): (k, (1, v)))
-    ws = other.map(lambda (k, v): (k, (2, v)))
+    vs = rdd.map(lambda k_v: (k_v[0], (1, k_v[1])))
+    ws = other.map(lambda k_v1: (k_v1[0], (2, k_v1[1])))
     return vs.union(ws).groupByKey(numPartitions).flatMapValues(lambda x: dispatch(x.__iter__()))
 
 
@@ -98,7 +99,7 @@ def python_full_outer_join(rdd, other, numPartitions):
 
 def python_cogroup(rdds, numPartitions):
     def make_mapper(i):
-        return lambda (k, v): (k, (i, v))
+        return lambda k_v2: (k_v2[0], (i, k_v2[1]))
     vrdds = [rdd.map(make_mapper(i)) for i, rdd in enumerate(rdds)]
     union_vrdds = reduce(lambda acc, other: acc.union(other), vrdds)
     rdd_len = len(vrdds)

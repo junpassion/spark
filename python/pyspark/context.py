@@ -1,3 +1,4 @@
+from __future__ import print_function
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -833,9 +834,9 @@ class SparkContext(object):
         for i, (id, acc, showed) in enumerate(self._profile_stats):
             stats = acc.value
             if not showed and stats:
-                print "=" * 60
-                print "Profile of RDD<id=%d>" % id
-                print "=" * 60
+                print("=" * 60)
+                print("Profile of RDD<id=%d>" % id)
+                print("=" * 60)
                 stats.sort_stats("time", "cumulative").print_stats()
                 # mark it as showed
                 self._profile_stats[i][2] = True

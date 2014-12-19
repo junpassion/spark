@@ -1,3 +1,4 @@
+from __future__ import print_function
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -24,6 +25,7 @@ import tempfile
 
 from pyspark.context import SparkConf, SparkContext, RDD
 from pyspark.streaming.context import StreamingContext
+from functools import reduce
 
 
 class PySparkStreamingTestCase(unittest.TestCase):
@@ -47,7 +49,7 @@ class PySparkStreamingTestCase(unittest.TestCase):
         while len(result) < n and time.time() - start_time < self.timeout:
             time.sleep(0.01)
         if len(result) < n:
-            print "timeout after", self.timeout
+            print("timeout after", self.timeout)
 
     def _take(self, dstream, n):
         """
