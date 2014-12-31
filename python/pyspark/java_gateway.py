@@ -100,7 +100,7 @@ def launch_gateway():
             def run(self):
                 while True:
                     line = self.stream.readline()
-                    sys.stderr.write(line)
+                    sys.stderr.write(str(line))
         EchoOutputThread(proc.stdout).start()
 
     # Connect to the gateway

@@ -39,8 +39,11 @@ import json
 import re
 from array import array
 from operator import itemgetter
-from itertools import imap
-
+import sys
+if sys.version < '3':
+    from itertools import imap
+else:
+    imap = map
 from py4j.protocol import Py4JError
 from py4j.java_collections import ListConverter, MapConverter
 
@@ -487,9 +490,13 @@ class UserDefinedType(DataType):
     def __eq__(self, other):
         return type(self) == type(other)
 
+try:
+    _globals_values = globals().itervalues()
+except AttributeError:
+    _globals_values = globals().values()
 
 _all_primitive_types = dict((v.typeName(), v)
-                            for v in globals().itervalues()
+                            for v in _globals_values
                             if type(v) is PrimitiveTypeSingleton and
                             v.__base__ == PrimitiveType)
 
@@ -579,16 +586,19 @@ _type_mappings = {
     type(None): NullType,
     bool: BooleanType,
     int: IntegerType,
-    long: LongType,
     float: DoubleType,
     str: StringType,
-    unicode: StringType,
     bytearray: BinaryType,
     decimal.Decimal: DecimalType,
     datetime.date: DateType,
     datetime.datetime: TimestampType,
     datetime.time: TimestampType,
 }
+
+if sys.version < '3':
+    # TODO: need to figure out how to handle int vs. long in Python 3
+    _type_mappings[long] = LongType
+    _type_mappings[unicode] = StringType
 
 
 def _infer_type(obj):
@@ -961,23 +971,43 @@ def _infer_schema_type(obj, dataType):
         raise ValueError("Unexpected dataType: %s" % dataType)
 
 
-_acceptable_types = {
-    BooleanType: (bool,),
-    ByteType: (int, long),
-    ShortType: (int, long),
-    IntegerType: (int, long),
-    LongType: (int, long),
-    FloatType: (float,),
-    DoubleType: (float,),
-    DecimalType: (decimal.Decimal,),
-    StringType: (str, unicode),
-    BinaryType: (bytearray,),
-    DateType: (datetime.date,),
-    TimestampType: (datetime.datetime,),
-    ArrayType: (list, tuple, array),
-    MapType: (dict,),
-    StructType: (tuple, list),
-}
+if sys.version < '3':
+    # TODO: this should be done in a cleaner fashion
+    _acceptable_types = {
+        BooleanType: (bool,),
+        ByteType: (int, long),
+        ShortType: (int, long),
+        IntegerType: (int, long),
+        LongType: (int, long),
+        FloatType: (float,),
+        DoubleType: (float,),
+        DecimalType: (decimal.Decimal,),
+        StringType: (str, unicode),
+        BinaryType: (bytearray,),
+        DateType: (datetime.date,),
+        TimestampType: (datetime.datetime,),
+        ArrayType: (list, tuple, array),
+        MapType: (dict,),
+        StructType: (tuple, list),
+    }
+else:
+    _acceptable_types = {
+        BooleanType: (bool,),
+        ByteType: (int,),
+        ShortType: (int,),
+        IntegerType: (int,),
+        LongType: (int,),
+        FloatType: (float,),
+        DoubleType: (float,),
+        DecimalType: (decimal.Decimal,),
+        StringType: (str,),
+        BinaryType: (bytearray,),
+        DateType: (datetime.date,),
+        TimestampType: (datetime.datetime,),
+        ArrayType: (list, tuple, array),
+        MapType: (dict,),
+        StructType: (tuple, list),
+    }
 
 
 def _verify_type(obj, dataType):
