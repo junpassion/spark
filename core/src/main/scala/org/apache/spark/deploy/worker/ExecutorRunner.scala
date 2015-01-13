@@ -28,7 +28,7 @@ import com.google.common.io.Files
 import org.apache.spark.{SparkConf, Logging}
 import org.apache.spark.deploy.{ApplicationDescription, Command, ExecutorState}
 import org.apache.spark.deploy.DeployMessages.ExecutorStateChanged
-import org.apache.spark.util.logging.FileAppender
+import org.apache.spark.util.logging.{StreamFileAppender}
 
 /**
  * Manages the execution of one executor process.
@@ -54,8 +54,8 @@ private[spark] class ExecutorRunner(
   val fullId = appId + "/" + execId
   var workerThread: Thread = null
   var process: Process = null
-  var stdoutAppender: FileAppender = null
-  var stderrAppender: FileAppender = null
+  var stdoutAppender: StreamFileAppender = null
+  var stderrAppender: StreamFileAppender = null
 
   // NOTE: This is now redundant with the automated shut-down enforced by the Executor. It might
   // make sense to remove this in the future.
@@ -140,11 +140,11 @@ private[spark] class ExecutorRunner(
 
       // Redirect its stdout and stderr to files
       val stdout = new File(executorDir, "stdout")
-      stdoutAppender = FileAppender(process.getInputStream, stdout, conf)
+      stdoutAppender = StreamFileAppender(process.getInputStream, stdout, conf)
 
       val stderr = new File(executorDir, "stderr")
       Files.write(header, stderr, UTF_8)
-      stderrAppender = FileAppender(process.getErrorStream, stderr, conf)
+      stderrAppender = StreamFileAppender(process.getErrorStream, stderr, conf)
 
       // Wait for it to exit; executor may exit with code 0 (when driver instructs it to shutdown)
       // or with nonzero exit code

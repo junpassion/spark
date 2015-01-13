@@ -17,7 +17,7 @@
 
 package org.apache.spark.util.logging
 
-import java.io.{File, FileFilter, InputStream}
+import java.io.{File, FileFilter}
 
 import com.google.common.io.Files
 import org.apache.spark.SparkConf
@@ -28,29 +28,20 @@ import RollingFileAppender._
  * over the file after the given interval. The rolled over files are named
  * based on the given pattern.
  *
- * @param inputStream             Input stream to read data from
  * @param activeFile              File to write data to
  * @param rollingPolicy           Policy based on which files will be rolled over.
  * @param conf                    SparkConf that is used to pass on extra configurations
- * @param bufferSize              Optional buffer size. Used mainly for testing.
  */
 private[spark] class RollingFileAppender(
-    inputStream: InputStream,
     activeFile: File,
     val rollingPolicy: RollingPolicy,
-    conf: SparkConf,
-    bufferSize: Int = DEFAULT_BUFFER_SIZE
-  ) extends FileAppender(inputStream, activeFile, bufferSize) {
+    conf: SparkConf
+  ) extends FileAppender(activeFile) {
 
   private val maxRetainedFiles = conf.getInt(RETAINED_FILES_PROPERTY, -1)
 
-  /** Stop the appender */
-  override def stop() {
-    super.stop()
-  }
-
   /** Append bytes to file after rolling over is necessary */
-  override protected def appendToFile(bytes: Array[Byte], len: Int) {
+  override def appendToFile(bytes: Array[Byte], len: Int) {
     if (rollingPolicy.shouldRollover(len)) {
       rollover()
       rollingPolicy.rolledOver()
@@ -141,7 +132,6 @@ private[spark] object RollingFileAppender {
   val SIZE_PROPERTY = "spark.executor.logs.rolling.size.maxBytes"
   val SIZE_DEFAULT = (1024 * 1024).toString
   val RETAINED_FILES_PROPERTY = "spark.executor.logs.rolling.maxRetainedFiles"
-  val DEFAULT_BUFFER_SIZE = 8192
 
   /**
    * Get the sorted list of rolled over files. This assumes that the all the rolled

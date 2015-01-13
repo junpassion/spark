@@ -28,7 +28,7 @@ import com.google.common.base.Charsets.UTF_8
 import com.google.common.io.Files
 
 import org.apache.spark.{Logging, SparkConf}
-import org.apache.spark.util.logging.{RollingFileAppender, SizeBasedRollingPolicy, TimeBasedRollingPolicy, FileAppender}
+import org.apache.spark.util.logging._
 
 class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
 
@@ -45,7 +45,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
   test("basic file appender") {
     val testString = (1 to 1000).mkString(", ")
     val inputStream = new ByteArrayInputStream(testString.getBytes(UTF_8))
-    val appender = new FileAppender(inputStream, testFile)
+    val appender = new StreamFileAppender(inputStream, new FileAppender(testFile))
     inputStream.close()
     appender.awaitTermination()
     assert(Files.toString(testFile, UTF_8) === testString)
@@ -60,9 +60,9 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val numRollovers = durationMillis / rolloverIntervalMillis
     val textToAppend = (1 to numRollovers).map( _.toString * 10 )
 
-    val appender = new RollingFileAppender(testInputStream, testFile,
+    val appender = new StreamFileAppender(testInputStream, new RollingFileAppender(testFile,
       new TimeBasedRollingPolicy(rolloverIntervalMillis, s"--HH-mm-ss-SSSS", false),
-      new SparkConf(), 10)
+      new SparkConf()), bufferSize = 10)
 
     testRolling(appender, testOutputStream, textToAppend, rolloverIntervalMillis)
   }
@@ -74,8 +74,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val rolloverSize = 1000
     val textToAppend = (1 to 3).map( _.toString * 1000 )
 
-    val appender = new RollingFileAppender(testInputStream, testFile,
-      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), 99)
+    val appender = new StreamFileAppender(testInputStream, new RollingFileAppender(testFile,
+      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf()), bufferSize = 99)
 
     val files = testRolling(appender, testOutputStream, textToAppend, 0)
     files.foreach { file =>
@@ -89,8 +89,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val testOutputStream = new PipedOutputStream()
     val testInputStream = new PipedInputStream(testOutputStream, 100 * 1000)
     val conf = new SparkConf().set(RollingFileAppender.RETAINED_FILES_PROPERTY, "10")
-    val appender = new RollingFileAppender(testInputStream, testFile,
-      new SizeBasedRollingPolicy(1000, false), conf, 10)
+    val appender = new StreamFileAppender(testInputStream, new RollingFileAppender(testFile,
+      new SizeBasedRollingPolicy(1000, false), conf), bufferSize = 10)
 
     // send data to appender through the input stream, and wait for the data to be written
     val allGeneratedFiles = new HashSet[String]()
@@ -132,9 +132,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
       }
 
       // Create and test file appender
-      val testOutputStream = new PipedOutputStream()
-      val testInputStream = new PipedInputStream(testOutputStream)
-      val appender = FileAppender(testInputStream, testFile, conf)
+      val appender = FileAppender(testFile, conf)
       //assert(appender.getClass === classTag[ExpectedAppender].getClass)
       assert(appender.getClass.getSimpleName ===
         classTag[ExpectedAppender].runtimeClass.getSimpleName)
@@ -147,8 +145,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
         }
         assert(policyParam === expectedRollingPolicyParam)
       }
-      testOutputStream.close()
-      appender.awaitTermination()
+      appender.close()
     }
 
     import RollingFileAppender._
@@ -191,7 +188,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
    * across rolled over files.
    */
   def testRolling(
-      appender: FileAppender,
+      appender: StreamFileAppender,
       outputStream: OutputStream,
       textToAppend: Seq[String],
       sleepTimeBetweenTexts: Long

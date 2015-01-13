@@ -134,6 +134,6 @@ private[spark] class SizeBasedRollingPolicy(
 }
 
 private[spark] object SizeBasedRollingPolicy {
-  val MINIMUM_SIZE_BYTES = RollingFileAppender.DEFAULT_BUFFER_SIZE * 10
+  val MINIMUM_SIZE_BYTES = StreamFileAppender.DEFAULT_BUFFER_SIZE * 10
 }
 
