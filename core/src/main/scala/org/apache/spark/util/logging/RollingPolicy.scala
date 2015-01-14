@@ -18,9 +18,10 @@
 package org.apache.spark.util.logging
 
 import java.text.SimpleDateFormat
-import java.util.Calendar
+import java.util.Date
 
 import org.apache.spark.Logging
+import org.apache.spark.util.{SystemClock, Clock}
 
 /**
  * Defines the policy based on which [[org.apache.spark.util.logging.RollingFileAppender]] will
@@ -48,11 +49,11 @@ private[spark] trait RollingPolicy {
 private[spark] class TimeBasedRollingPolicy(
     var rolloverIntervalMillis: Long,
     rollingFileSuffixPattern: String,
-    checkIntervalConstraint: Boolean = true   // set to false while testing
+    clock: Clock = SystemClock  // so we don't have to rely on actual time in tests
   ) extends RollingPolicy with Logging {
 
   import TimeBasedRollingPolicy._
-  if (checkIntervalConstraint && rolloverIntervalMillis < MINIMUM_INTERVAL_SECONDS * 1000L) {
+  if (rolloverIntervalMillis < MINIMUM_INTERVAL_SECONDS * 1000L) {
     logWarning(s"Rolling interval [${rolloverIntervalMillis/1000L} seconds] is too small. " +
       s"Setting the interval to the acceptable minimum of $MINIMUM_INTERVAL_SECONDS seconds.")
     rolloverIntervalMillis = MINIMUM_INTERVAL_SECONDS * 1000L
@@ -63,19 +64,19 @@ private[spark] class TimeBasedRollingPolicy(
 
   /** Should rollover if current time has exceeded next rollover time */
   def shouldRollover(bytesToBeWritten: Long): Boolean = {
-    System.currentTimeMillis > nextRolloverTime
+    clock.getTime() > nextRolloverTime
   }
 
   /** Rollover has occurred, so find the next time to rollover */
   def rolledOver() {
     nextRolloverTime = calculateNextRolloverTime()
-    logDebug(s"Current time: ${System.currentTimeMillis}, next rollover time: " + nextRolloverTime)
+    logDebug(s"Current time: ${clock.getTime()}, next rollover time: " + nextRolloverTime)
   }
 
   def bytesWritten(bytes: Long) { }  // nothing to do
 
   private def calculateNextRolloverTime(): Long = {
-    val now = System.currentTimeMillis()
+    val now = clock.getTime()
     val targetTime = (
       math.ceil(now.toDouble / rolloverIntervalMillis) * rolloverIntervalMillis
     ).toLong
@@ -84,7 +85,7 @@ private[spark] class TimeBasedRollingPolicy(
   }
 
   def generateRolledOverFileSuffix(): String = {
-    formatter.format(Calendar.getInstance.getTime)
+    formatter.format(new Date(clock.getTime()))
   }
 }
 
@@ -98,7 +99,8 @@ private[spark] object TimeBasedRollingPolicy {
  */
 private[spark] class SizeBasedRollingPolicy(
     var rolloverSizeBytes: Long,
-    checkSizeConstraint: Boolean = true     // set to false while testing
+    checkSizeConstraint: Boolean = true,    // set to false while testing
+    clock: Clock = SystemClock  // so we don't have to rely on actual time in tests
   ) extends RollingPolicy with Logging {
 
   import SizeBasedRollingPolicy._
@@ -129,7 +131,7 @@ private[spark] class SizeBasedRollingPolicy(
 
   /** Get the desired name of the rollover file */
   def generateRolledOverFileSuffix(): String = {
-    formatter.format(Calendar.getInstance.getTime)
+    formatter.format(new Date(clock.getTime()))
   }
 }
 
