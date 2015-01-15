@@ -22,8 +22,8 @@ import java.net.URI
 
 import org.apache.hadoop.fs.{FileSystem, Path, PathFilter}
 
-import org.apache.spark.util.logging.RollingFileOutputStream._
 import org.apache.spark.{Logging, SparkConf}
+import org.apache.spark.util.logging.RollingFileOutputStream._
 
 /**
  * Writes data to the given file, and rolls over the file after the given interval.

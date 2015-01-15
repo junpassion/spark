@@ -19,15 +19,16 @@ package org.apache.spark.deploy.worker
 
 import java.io._
 
+import scala.collection.JavaConversions._
+
 import akka.actor.ActorRef
 import com.google.common.base.Charsets.UTF_8
 import com.google.common.io.Files
+
+import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.deploy.DeployMessages.ExecutorStateChanged
 import org.apache.spark.deploy.{ApplicationDescription, ExecutorState}
 import org.apache.spark.util.logging.{StreamCopier, FileAppender}
-import org.apache.spark.{Logging, SparkConf}
-
-import scala.collection.JavaConversions._
 
 /**
  * Manages the execution of one executor process.

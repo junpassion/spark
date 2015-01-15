@@ -20,20 +20,22 @@ package org.apache.spark.scheduler
 import java.io._
 import java.net.URI
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 import com.google.common.base.Charsets
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.permission.FsPermission
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.json4s.JsonAST.JValue
+import org.json4s.jackson.JsonMethods._
+
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.util.logging.FileAppender
 import org.apache.spark.util.{JsonProtocol, Utils}
 import org.apache.spark.{Logging, SPARK_VERSION, SparkConf}
-import org.json4s.JsonAST.JValue
-import org.json4s.jackson.JsonMethods._
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 /**
  * A SparkListener that logs events to persistent storage.

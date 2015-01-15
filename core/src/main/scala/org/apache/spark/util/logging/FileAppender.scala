@@ -21,8 +21,9 @@ import java.io.{File, OutputStream}
 import java.net.URI
 
 import org.apache.hadoop.fs.{FileSystem, LocalFileSystem, Path}
-import org.apache.spark.util.IntParam
+
 import org.apache.spark.{Logging, SparkConf}
+import org.apache.spark.util.IntParam
 
 /**
  * Helper methods for constructing file appenders based on SparkConf configurations.
