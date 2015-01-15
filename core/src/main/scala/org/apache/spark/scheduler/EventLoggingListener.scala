@@ -20,20 +20,20 @@ package org.apache.spark.scheduler
 import java.io._
 import java.net.URI
 
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
-
 import com.google.common.base.Charsets
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
 import org.apache.hadoop.fs.permission.FsPermission
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.deploy.SparkHadoopUtil
+import org.apache.spark.io.CompressionCodec
+import org.apache.spark.util.logging.FileAppender
+import org.apache.spark.util.{JsonProtocol, Utils}
+import org.apache.spark.{Logging, SPARK_VERSION, SparkConf}
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.JsonMethods._
 
-import org.apache.spark.{Logging, SparkConf, SPARK_VERSION}
-import org.apache.spark.deploy.SparkHadoopUtil
-import org.apache.spark.io.CompressionCodec
-import org.apache.spark.util.{JsonProtocol, Utils}
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * A SparkListener that logs events to persistent storage.
@@ -52,7 +52,7 @@ private[spark] class EventLoggingListener(
     hadoopConf: Configuration)
   extends SparkListener with Logging {
 
-  import EventLoggingListener._
+  import org.apache.spark.scheduler.EventLoggingListener._
 
   def this(appId: String, logBaseDir: String, sparkConf: SparkConf) =
     this(appId, logBaseDir, sparkConf, SparkHadoopUtil.get.newConfiguration(sparkConf))
@@ -62,17 +62,6 @@ private[spark] class EventLoggingListener(
   private val testing = sparkConf.getBoolean("spark.eventLog.testing", false)
   private val outputBufferSize = sparkConf.getInt("spark.eventLog.buffer.kb", 100) * 1024
   private val fileSystem = Utils.getHadoopFileSystem(new URI(logBaseDir), hadoopConf)
-
-  // Only defined if the file system scheme is not local
-  private var hadoopDataStream: Option[FSDataOutputStream] = None
-
-  // The Hadoop APIs have changed over time, so we use reflection to figure out
-  // the correct method to use to flush a hadoop data stream. See SPARK-1518
-  // for details.
-  private val hadoopFlushMethod = {
-    val cls = classOf[FSDataOutputStream]
-    scala.util.Try(cls.getMethod("hflush")).getOrElse(cls.getMethod("sync"))
-  }
 
   private var writer: Option[PrintWriter] = None
 
@@ -91,10 +80,7 @@ private[spark] class EventLoggingListener(
     }
 
     val workingPath = logPath + IN_PROGRESS
-    val uri = new URI(workingPath)
     val path = new Path(workingPath)
-    val defaultFs = FileSystem.getDefaultUri(hadoopConf).getScheme
-    val isDefaultLocal = defaultFs == null || defaultFs == "file"
 
     if (shouldOverwrite && fileSystem.exists(path)) {
       logWarning(s"Event log $path already exists. Overwriting...")
@@ -103,13 +89,7 @@ private[spark] class EventLoggingListener(
 
     /* The Hadoop LocalFileSystem (r1.0.4) has known issues with syncing (HADOOP-7844).
      * Therefore, for local files, use FileOutputStream instead. */
-    val dstream =
-      if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
-        new FileOutputStream(uri.getPath)
-      } else {
-        hadoopDataStream = Some(fileSystem.create(path))
-        hadoopDataStream.get
-      }
+    val dstream = FileAppender(path.toUri, sparkConf, fileSystem)
 
     val compressionCodec =
       if (shouldCompress) {
@@ -132,7 +112,6 @@ private[spark] class EventLoggingListener(
     writer.foreach(_.println(compact(render(eventJson))))
     if (flushLogger) {
       writer.foreach(_.flush())
-      hadoopDataStream.foreach(hadoopFlushMethod.invoke(_))
     }
     if (testing) {
       loggedEvents += eventJson

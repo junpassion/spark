@@ -24,7 +24,7 @@ import scala.xml.Node
 import org.apache.spark.ui.{WebUIPage, UIUtils}
 import org.apache.spark.util.Utils
 import org.apache.spark.Logging
-import org.apache.spark.util.logging.RollingFileAppender
+import org.apache.spark.util.logging.{RollingFileOutputStream, RollingFileOutputStream$}
 
 private[spark] class LogPage(parent: WorkerWebUI) extends WebUIPage("logPage") with Logging {
   private val worker = parent.worker
@@ -129,30 +129,34 @@ private[spark] class LogPage(parent: WorkerWebUI) extends WebUIPage("logPage") w
       offsetOption: Option[Long],
       byteLength: Int
     ): (String, Long, Long, Long) = {
-    try {
-      val files = RollingFileAppender.getSortedRolledOverFiles(logDirectory, logType)
-      logDebug(s"Sorted log files of type $logType in $logDirectory:\n${files.mkString("\n")}")
+    /*
 
-      val totalLength = files.map { _.length }.sum
-      val offset = offsetOption.getOrElse(totalLength - byteLength)
-      val startIndex = {
-        if (offset < 0) {
-          0L
-        } else if (offset > totalLength) {
-          totalLength
-        } else {
-          offset
-        }
-      }
-      val endIndex = math.min(startIndex + totalLength, totalLength)
-      logDebug(s"Getting log from $startIndex to $endIndex")
-      val logText = Utils.offsetBytes(files, startIndex, endIndex)
-      logDebug(s"Got log of length ${logText.length} bytes")
-      (logText, startIndex, endIndex, totalLength)
-    } catch {
-      case e: Exception =>
-        logError(s"Error getting $logType logs from directory $logDirectory", e)
-        ("Error getting logs due to exception: " + e.getMessage, 0, 0, 0)
-    }
+try {
+val files = RollingFileOutputStream.getSortedRolledOverFiles(logDirectory, logType)
+logDebug(s"Sorted log files of type $logType in $logDirectory:\n${files.mkString("\n")}")
+
+val totalLength = files.map { _.length }.sum
+val offset = offsetOption.getOrElse(totalLength - byteLength)
+val startIndex = {
+  if (offset < 0) {
+    0L
+  } else if (offset > totalLength) {
+    totalLength
+  } else {
+    offset
+  }
+}
+val endIndex = math.min(startIndex + totalLength, totalLength)
+logDebug(s"Getting log from $startIndex to $endIndex")
+val logText = Utils.offsetBytes(files, startIndex, endIndex)
+logDebug(s"Got log of length ${logText.length} bytes")
+(logText, startIndex, endIndex, totalLength)
+} catch {
+case e: Exception =>
+  logError(s"Error getting $logType logs from directory $logDirectory", e)
+  ("Error getting logs due to exception: " + e.getMessage, 0, 0, 0)
+}
+*/
+    null  // TODO
   }
 }

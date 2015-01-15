@@ -24,7 +24,7 @@ import org.apache.spark.Logging
 import org.apache.spark.util.{SystemClock, Clock}
 
 /**
- * Defines the policy based on which [[org.apache.spark.util.logging.RollingFileAppender]] will
+ * Defines the policy based on which [[org.apache.spark.util.logging.RollingFileOutputStream]] will
  * generate rolling files.
  */
 private[spark] trait RollingPolicy {
@@ -136,6 +136,6 @@ private[spark] class SizeBasedRollingPolicy(
 }
 
 private[spark] object SizeBasedRollingPolicy {
-  val MINIMUM_SIZE_BYTES = StreamFileAppender.DEFAULT_BUFFER_SIZE * 10
+  val MINIMUM_SIZE_BYTES = StreamCopier.DEFAULT_BUFFER_SIZE * 10
 }
 
