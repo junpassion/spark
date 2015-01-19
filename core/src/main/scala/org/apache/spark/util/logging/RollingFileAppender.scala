@@ -23,7 +23,7 @@ import java.net.URI
 import org.apache.hadoop.fs.{FileSystem, Path, PathFilter}
 
 import org.apache.spark.{Logging, SparkConf}
-import org.apache.spark.util.logging.RollingFileOutputStream._
+import org.apache.spark.util.logging.RollingFileAppender._
 
 /**
  * Writes data to the given file, and rolls over the file after the given interval.
@@ -33,7 +33,7 @@ import org.apache.spark.util.logging.RollingFileOutputStream._
  * @param rollingPolicy           Policy based on which files will be rolled over.
  * @param conf                    SparkConf that is used to pass on extra configurations
  */
-private[spark] class RollingFileOutputStream(
+private[spark] class RollingFileAppender(
     activeFileURI: URI,
     val rollingPolicy: RollingPolicy,
     conf: SparkConf,
@@ -160,10 +160,10 @@ private[spark] class RollingFileOutputStream(
 }
 
 /**
- * Companion object to [[org.apache.spark.util.logging.RollingFileOutputStream]]. Defines
+ * Companion object to [[org.apache.spark.util.logging.RollingFileAppender]]. Defines
  * names of configurations that configure rolling file appenders.
  */
-private[spark] object RollingFileOutputStream {
+private[spark] object RollingFileAppender {
   val STRATEGY_PROPERTY = "spark.executor.logs.rolling.strategy"
   val STRATEGY_DEFAULT = ""
   val INTERVAL_PROPERTY = "spark.executor.logs.rolling.time.interval"

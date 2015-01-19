@@ -32,7 +32,7 @@ import org.json4s.jackson.JsonMethods._
 
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.util.logging.FileAppender
+import org.apache.spark.util.logging.{HadoopOutputStream, FileAppender}
 import org.apache.spark.util.{JsonProtocol, Utils}
 import org.apache.spark.{Logging, SPARK_VERSION, SparkConf}
 
@@ -65,7 +65,7 @@ private[spark] class EventLoggingListener(
   private val outputBufferSize = sparkConf.getInt("spark.eventLog.buffer.kb", 100) * 1024
   private val fileSystem = Utils.getHadoopFileSystem(new URI(logBaseDir), hadoopConf)
 
-  private var writer: Option[PrintWriter] = None
+  private var fileAppender: Option[FileAppender] = None
 
   // For testing. Keep track of all JSON serialized events that have been logged.
   private[scheduler] val loggedEvents = new ArrayBuffer[JValue]
@@ -89,10 +89,6 @@ private[spark] class EventLoggingListener(
       fileSystem.delete(path, true)
     }
 
-    /* The Hadoop LocalFileSystem (r1.0.4) has known issues with syncing (HADOOP-7844).
-     * Therefore, for local files, use FileOutputStream instead. */
-    val dstream = FileAppender(path.toUri, sparkConf, fileSystem)
-
     val compressionCodec =
       if (shouldCompress) {
         Some(CompressionCodec.createCodec(sparkConf))
@@ -100,10 +96,14 @@ private[spark] class EventLoggingListener(
         None
       }
 
-    fileSystem.setPermission(path, LOG_FILE_PERMISSIONS)
-    val logStream = initEventLog(new BufferedOutputStream(dstream, outputBufferSize),
-      compressionCodec)
-    writer = Some(new PrintWriter(logStream))
+    def outputStreamFactory(path: Path, fileSystem: FileSystem): OutputStream = {
+      val outputStream =
+        new BufferedOutputStream(HadoopOutputStream(path, fileSystem), outputBufferSize)
+      fileSystem.setPermission(path, LOG_FILE_PERMISSIONS)
+      initEventLog(outputStream, compressionCodec)
+    }
+
+    fileAppender = Some(FileAppender(path.toUri, sparkConf, fileSystem, outputStreamFactory))
 
     logInfo("Logging events to %s".format(logPath))
   }
@@ -111,9 +111,9 @@ private[spark] class EventLoggingListener(
   /** Log the event as JSON. */
   private def logEvent(event: SparkListenerEvent, flushLogger: Boolean = false) {
     val eventJson = JsonProtocol.sparkEventToJson(event)
-    writer.foreach(_.println(compact(render(eventJson))))
+    fileAppender.foreach(_.append(compact(render(eventJson))))
     if (flushLogger) {
-      writer.foreach(_.flush())
+      fileAppender.foreach(_.flush())
     }
     if (testing) {
       loggedEvents += eventJson
@@ -158,7 +158,7 @@ private[spark] class EventLoggingListener(
    * ".inprogress" suffix.
    */
   def stop() = {
-    writer.foreach(_.close())
+    fileAppender.foreach(_.close())
 
     val target = new Path(logPath)
     if (fileSystem.exists(target)) {

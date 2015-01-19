@@ -49,7 +49,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
   test("basic stream file appender") {
     val testString = (1 to 1000).mkString(", ")
     val inputStream = new ByteArrayInputStream(testString.getBytes(UTF_8))
-    val appender = new StreamCopier(inputStream, FileAppender(testFile, new SparkConf()))
+    val appender = new StreamFileAppender(inputStream, FileAppender(testFile, new SparkConf()))
     inputStream.close()
     appender.awaitTermination()
     assert(Files.toString(testFile, UTF_8) === testString)
@@ -62,7 +62,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val textToAppend = (1 to numRollovers).map( _.toString * 10 )
 
     val clock = new FakeClock()
-    val appender = new RollingFileOutputStream(testFile.toURI,
+    val appender = new RollingFileAppender(testFile.toURI,
       new TimeBasedRollingPolicy(rolloverIntervalMillis, s"--HH-mm-ss-SSSS", clock),
       new SparkConf(), localFileSystem)
 
@@ -74,7 +74,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val rolloverSize = 1000
     val textToAppend = (1 to 3).map( _.toString * rolloverSize )
 
-    val appender = new RollingFileOutputStream(testFile.toURI,
+    val appender = new RollingFileAppender(testFile.toURI,
       new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), localFileSystem)
 
     val files = testRolling(appender, textToAppend, 0, new FakeClock)
@@ -90,9 +90,9 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val retainedFiles = 10
     val rolloverSize = 1000
     val conf =
-      new SparkConf().set(RollingFileOutputStream.RETAINED_FILES_PROPERTY, retainedFiles.toString)
+      new SparkConf().set(RollingFileAppender.RETAINED_FILES_PROPERTY, retainedFiles.toString)
     val clock = new FakeClock()
-    val appender = new RollingFileOutputStream(testFile.toURI,
+    val appender = new RollingFileAppender(testFile.toURI,
       new SizeBasedRollingPolicy(rolloverSize, false, clock), conf, localFileSystem)
 
     val logDirPath = new Path(testFile.getParent)
@@ -100,8 +100,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     // send data to appender through the input stream, and wait for the data to be written
     val allGeneratedFiles = new HashSet[String]()
     for (item <- (1 to retainedFiles + 2).map { _ => "x" * rolloverSize }) {
-      appender.write(item.getBytes(UTF_8))
-      allGeneratedFiles ++= RollingFileOutputStream.getSortedRolledOverFilesPlusActiveFile(
+      appender.append(item)
+      allGeneratedFiles ++= RollingFileAppender.getSortedRolledOverFilesPlusActiveFile(
         logDirPath, testFile.getName, localFileSystem).map(_.toString)
       clock.advance(10000)
     }
@@ -112,7 +112,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val rolledOverFiles = allGeneratedFiles.filter { _ != testFile.toString }.toArray.sorted
     logInfo(s"All rolled over files generated:${rolledOverFiles.size}\n" + rolledOverFiles.mkString("\n"))
     val earliestRolledOverFile = rolledOverFiles.head
-    val existingRolledOverFiles = RollingFileOutputStream.getSortedRolledOverFilesPlusActiveFile(
+    val existingRolledOverFiles = RollingFileAppender.getSortedRolledOverFilesPlusActiveFile(
       logDirPath, testFile.getName, localFileSystem).map(_.toString)
     logInfo("Existing rolled over files:\n" + existingRolledOverFiles.mkString("\n"))
     assert(!existingRolledOverFiles.toSet.contains(earliestRolledOverFile))
@@ -137,8 +137,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
       //assert(appender.getClass === classTag[ExpectedAppender].getClass)
       assert(appender.getClass.getSimpleName ===
         classTag[ExpectedAppender].runtimeClass.getSimpleName)
-      if (appender.isInstanceOf[RollingFileOutputStream]) {
-        val rollingPolicy = appender.asInstanceOf[RollingFileOutputStream].rollingPolicy
+      if (appender.isInstanceOf[RollingFileAppender]) {
+        val rollingPolicy = appender.asInstanceOf[RollingFileAppender].rollingPolicy
         val policyParam = if (rollingPolicy.isInstanceOf[TimeBasedRollingPolicy]) {
           rollingPolicy.asInstanceOf[TimeBasedRollingPolicy].rolloverIntervalMillis
         } else {
@@ -149,7 +149,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
       appender.close()
     }
 
-    import RollingFileOutputStream._
+    import RollingFileAppender._
 
     def rollingStrategy(strategy: String) = Seq(STRATEGY_PROPERTY -> strategy)
     def rollingSize(size: String) = Seq(SIZE_PROPERTY -> size)
@@ -160,28 +160,28 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val msInMinute = 60 * 1000L
 
     // test no strategy -> no rolling
-    testAppenderSelection[FileOutputStream, Any](Seq.empty)
+    testAppenderSelection[FileAppender, Any](Seq.empty)
 
     // test time based rolling strategy
-    testAppenderSelection[RollingFileOutputStream, Any](rollingStrategy("time"), msInDay)
-    testAppenderSelection[RollingFileOutputStream, TimeBasedRollingPolicy](
+    testAppenderSelection[RollingFileAppender, Any](rollingStrategy("time"), msInDay)
+    testAppenderSelection[RollingFileAppender, TimeBasedRollingPolicy](
       rollingStrategy("time") ++ rollingInterval("daily"), msInDay)
-    testAppenderSelection[RollingFileOutputStream, TimeBasedRollingPolicy](
+    testAppenderSelection[RollingFileAppender, TimeBasedRollingPolicy](
       rollingStrategy("time") ++ rollingInterval("hourly"), msInHour)
-    testAppenderSelection[RollingFileOutputStream, TimeBasedRollingPolicy](
+    testAppenderSelection[RollingFileAppender, TimeBasedRollingPolicy](
       rollingStrategy("time") ++ rollingInterval("minutely"), msInMinute)
-    testAppenderSelection[RollingFileOutputStream, TimeBasedRollingPolicy](
+    testAppenderSelection[RollingFileAppender, TimeBasedRollingPolicy](
       rollingStrategy("time") ++ rollingInterval("123456789"), 123456789 * 1000L)
-    testAppenderSelection[FileOutputStream, Any](
+    testAppenderSelection[FileAppender, Any](
       rollingStrategy("time") ++ rollingInterval("xyz"))
 
     // test size based rolling strategy
-    testAppenderSelection[RollingFileOutputStream, SizeBasedRollingPolicy](
+    testAppenderSelection[RollingFileAppender, SizeBasedRollingPolicy](
       rollingStrategy("size") ++ rollingSize("123456789"), 123456789)
-    testAppenderSelection[FileOutputStream, Any](rollingSize("xyz"))
+    testAppenderSelection[FileAppender, Any](rollingSize("xyz"))
 
     // test illegal strategy
-    testAppenderSelection[FileOutputStream, Any](rollingStrategy("xyz"))
+    testAppenderSelection[FileAppender, Any](rollingStrategy("xyz"))
   }
 
   /**
@@ -189,7 +189,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
    * across rolled over files.
    */
   def testRolling(
-      appender: OutputStream,
+      appender: FileAppender,
       textToAppend: Seq[String],
       delayBetweenTextsMillis: Long,
       clock: FakeClock
@@ -197,7 +197,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     // send data to appender through the input stream, and wait for the data to be written
     val expectedText = textToAppend.mkString("")
     for (i <- 0 until textToAppend.size) {
-      appender.write(textToAppend(i).getBytes(UTF_8))
+      appender.append(textToAppend(i))
       clock.advance(delayBetweenTextsMillis)
     }
     logInfo("Data sent to appender")
@@ -205,7 +205,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     logInfo("Appender closed")
 
     // verify whether all the data written to rolled over files is same as expected
-    val generatedFiles = RollingFileOutputStream.getSortedRolledOverFilesPlusActiveFile(
+    val generatedFiles = RollingFileAppender.getSortedRolledOverFilesPlusActiveFile(
       new Path(testFile.getParentFile.toURI), testFile.getName, localFileSystem)
     logInfo("Filtered files: \n" + generatedFiles.mkString("\n"))
     assert(generatedFiles.size > 1)

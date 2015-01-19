@@ -17,28 +17,78 @@
 
 package org.apache.spark.util.logging
 
-import java.io.{File, OutputStream}
+import java.io.{OutputStream, File}
 import java.net.URI
 
+import com.google.common.base.Charsets.UTF_8
 import org.apache.hadoop.fs.{FileSystem, LocalFileSystem, Path}
 
 import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.IntParam
+import org.apache.spark.util.logging.FileAppender.DEFAULT_OUTPUT_STREAM_FACTORY
+
+private[spark] class FileAppender(
+    pathURI: URI,
+    fileSystem: FileSystem,
+    outputStreamFactory: (Path, FileSystem) => OutputStream = DEFAULT_OUTPUT_STREAM_FACTORY) {
+
+  private val path: Path = new Path(pathURI)
+  private var outputStream: OutputStream = null
+
+  final def append(string: String): Unit = {
+    val bytes = string.getBytes(UTF_8)
+    append(bytes, 0, bytes.length)
+  }
+
+  def append(b: Array[Byte], off: Int, len: Int): Unit = {
+    openIfNecessary()
+    outputStream.write(b, off, len)
+  }
+
+  def close(): Unit = {
+    if (outputStream != null) {
+      outputStream.close()
+      outputStream = null
+    }
+  }
+
+  def flush(): Unit = {
+    if (outputStream != null) {
+      outputStream.flush()
+    }
+  }
+
+  protected def openIfNecessary(): Unit = {
+    if (outputStream == null) {
+      outputStream = outputStreamFactory(path, fileSystem)
+    }
+  }
+}
 
 /**
  * Helper methods for constructing file appenders based on SparkConf configurations.
  */
 private[spark] object FileAppender extends Logging {
 
+  private[logging]
+  def DEFAULT_OUTPUT_STREAM_FACTORY(path: Path, fileSystem: FileSystem): OutputStream = {
+    HadoopOutputStream(path, fileSystem)
+  }
+
   /** Create the right appender based on Spark configuration */
-  def apply(file: File, conf: SparkConf): OutputStream = {
+  def apply(file: File, conf: SparkConf): FileAppender = {
     apply(file.toURI, conf, new LocalFileSystem())
   }
 
   /** Create the right appender based on Spark configuration */
-  def apply(file: URI, conf: SparkConf, fileSystem: FileSystem): OutputStream = {
+  def apply(
+    file: URI,
+    conf: SparkConf,
+    fileSystem: FileSystem,
+    outputStreamFactory: (Path, FileSystem) => OutputStream = DEFAULT_OUTPUT_STREAM_FACTORY
+  ): FileAppender = {
 
-    import org.apache.spark.util.logging.RollingFileOutputStream._
+    import org.apache.spark.util.logging.RollingFileAppender._
 
     val rollingStrategy = conf.get(STRATEGY_PROPERTY, STRATEGY_DEFAULT)
     val rollingSizeBytes = conf.get(SIZE_PROPERTY, STRATEGY_DEFAULT)
@@ -65,10 +115,10 @@ private[spark] object FileAppender extends Logging {
       }
       validatedParams.map {
         case (interval, pattern) =>
-          new RollingFileOutputStream(file,
+          new RollingFileAppender(file,
             new TimeBasedRollingPolicy(interval, pattern), conf, fileSystem)
       }.getOrElse {
-        HadoopOutputStream(new Path(file), fileSystem)
+        new FileAppender(file, fileSystem, outputStreamFactory)
       }
     }
 
@@ -76,17 +126,17 @@ private[spark] object FileAppender extends Logging {
       rollingSizeBytes match {
         case IntParam(bytes) =>
           logInfo(s"Rolling executor logs enabled for $file with rolling every $bytes bytes")
-          new RollingFileOutputStream(file, new SizeBasedRollingPolicy(bytes), conf, fileSystem)
+          new RollingFileAppender(file, new SizeBasedRollingPolicy(bytes), conf, fileSystem)
         case _ =>
           logWarning(
             s"Illegal size [$rollingSizeBytes] for rolling executor logs, rolling logs not enabled")
-          HadoopOutputStream(new Path(file), fileSystem)
+          new FileAppender(file, fileSystem, outputStreamFactory)
       }
     }
 
     rollingStrategy match {
       case "" =>
-        HadoopOutputStream(new Path(file), fileSystem)
+        new FileAppender(file, fileSystem)
       case "time" =>
         createTimeBasedAppender()
       case "size" =>
@@ -95,7 +145,7 @@ private[spark] object FileAppender extends Logging {
         logWarning(
           s"Illegal strategy [$rollingStrategy] for rolling executor logs, " +
             s"rolling logs not enabled")
-        HadoopOutputStream(new Path(file), fileSystem)
+        new FileAppender(file, fileSystem)
     }
   }
 }

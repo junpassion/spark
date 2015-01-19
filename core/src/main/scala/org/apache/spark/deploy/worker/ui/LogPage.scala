@@ -24,7 +24,6 @@ import scala.xml.Node
 import org.apache.spark.ui.{WebUIPage, UIUtils}
 import org.apache.spark.util.Utils
 import org.apache.spark.Logging
-import org.apache.spark.util.logging.{RollingFileOutputStream, RollingFileOutputStream$}
 
 private[spark] class LogPage(parent: WorkerWebUI) extends WebUIPage("logPage") with Logging {
   private val worker = parent.worker

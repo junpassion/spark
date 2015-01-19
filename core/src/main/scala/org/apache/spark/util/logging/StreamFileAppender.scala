@@ -23,43 +23,43 @@ import org.apache.spark.Logging
 import org.apache.spark.util.Utils
 
 /**
- * Continuously copies data from the input stream to the output stream.
+ * Continuously copies data from the input stream to a file appender.
  *
  * @param inputStream     Input stream to read data from
- * @param outputStream    Output stream to write data to
+ * @param fileAppender    File appender to write data to
  * @param streamName      Name to identify the copier (used to name its thread)
  * @param bufferSize      Optional buffer size (used mainly for testing)
  */
-private[spark] class StreamCopier(
+private[spark] class StreamFileAppender(
     inputStream: InputStream,
-    val outputStream: OutputStream,
+    val fileAppender: OutputStream,
     streamName: String = "UNKNOWN STREAM",
-    bufferSize: Int = StreamCopier.DEFAULT_BUFFER_SIZE
+    bufferSize: Int = StreamFileAppender.DEFAULT_BUFFER_SIZE
   ) extends Logging {
 
   val DEFAULT_BUFFER_SIZE = 8192
   @volatile private var markedForStop = false     // has the copier been asked to stopped
   @volatile private var stopped = false           // has the copier stopped
 
-  // Thread that reads the input stream and writes to file
-  private val writingThread = new Thread(s"Stream copying thread for $streamName") {
+  // Thread that reads the input stream and writes to the file appender
+  private val writingThread = new Thread(s"File appending thread for $streamName") {
     setDaemon(true)
     override def run() {
       Utils.logUncaughtExceptions {
-        copyStream()
+        appendStreamToFile()
       }
     }
   }
   writingThread.start()
 
-  /** Stop the copier */
+  /** Stop the appender */
   def stop(): Unit = {
     markedForStop = true
   }
 
   /**
-   * Wait for the copying to stop copying, either because input stream is closed
-   * or because of any error in copying
+   * Wait for the appender to stop appending, either because input stream is closed
+   * or because of any error in appending
    */
   def awaitTermination() {
     synchronized {
@@ -69,8 +69,8 @@ private[spark] class StreamCopier(
     }
   }
 
-  /** Continuously read chunks from the input stream and copy them to the output stream */
-  protected def copyStream() {
+  //** Continuously read chunks from the input stream and append to the file */
+  protected def appendStreamToFile() {
     try {
       logDebug("Started copying thread")
       val buf = new Array[Byte](bufferSize)
@@ -78,7 +78,7 @@ private[spark] class StreamCopier(
       while (!markedForStop && n != -1) {
         n = inputStream.read(buf)
         if (n != -1) {
-          outputStream.write(buf, 0, n)
+          fileAppender.write(buf, 0, n)
         }
       }
     } catch {
@@ -87,13 +87,13 @@ private[spark] class StreamCopier(
     } finally {
       synchronized {
         stopped = true
-        outputStream.close()
+        fileAppender.close()
         notifyAll()
       }
     }
   }
 }
 
-private[spark] object StreamCopier extends Logging {
+private[spark] object StreamFileAppender extends Logging {
   val DEFAULT_BUFFER_SIZE = 8192
 }
