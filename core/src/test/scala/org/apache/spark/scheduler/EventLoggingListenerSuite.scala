@@ -126,6 +126,7 @@ class EventLoggingListenerSuite extends FunSuite with BeforeAndAfter with Loggin
     extraConf.foreach { case (k, v) => conf.set(k, v) }
     val logName = compressionCodec.map("test-" + _).getOrElse("test")
     val eventLogger = new EventLoggingListener(logName, testDirPath.toUri().toString(), conf)
+    val logFilePath = new Path(eventLogger.logPath)
     val listenerBus = new LiveListenerBus
     val applicationStart = SparkListenerApplicationStart("Greatest App (N)ever", None,
       125L, "Mickey")
@@ -139,9 +140,12 @@ class EventLoggingListenerSuite extends FunSuite with BeforeAndAfter with Loggin
     listenerBus.postToAll(applicationEnd)
     eventLogger.stop()
 
+    // Verify that the log file has the right file permissions
+    assert(fileSystem.getFileStatus(logFilePath).getPermission ===
+      EventLoggingListener.LOG_FILE_PERMISSIONS)
+
     // Verify file contains exactly the two events logged
-    val (logData, version) = EventLoggingListener.openEventLog(new Path(eventLogger.logPath),
-      fileSystem)
+    val (logData, version) = EventLoggingListener.openEventLog(logFilePath, fileSystem)
     try {
       val lines = readLines(logData)
       assert(lines.size === 2)
