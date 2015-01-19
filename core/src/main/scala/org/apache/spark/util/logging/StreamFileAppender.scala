@@ -17,7 +17,7 @@
 
 package org.apache.spark.util.logging
 
-import java.io.{InputStream, OutputStream}
+import java.io.InputStream
 
 import org.apache.spark.Logging
 import org.apache.spark.util.Utils
@@ -32,7 +32,7 @@ import org.apache.spark.util.Utils
  */
 private[spark] class StreamFileAppender(
     inputStream: InputStream,
-    val fileAppender: OutputStream,
+    val fileAppender: FileAppender,
     streamName: String = "UNKNOWN STREAM",
     bufferSize: Int = StreamFileAppender.DEFAULT_BUFFER_SIZE
   ) extends Logging {
@@ -72,18 +72,18 @@ private[spark] class StreamFileAppender(
   //** Continuously read chunks from the input stream and append to the file */
   protected def appendStreamToFile() {
     try {
-      logDebug("Started copying thread")
+      logDebug("Started appending thread")
       val buf = new Array[Byte](bufferSize)
       var n = 0
       while (!markedForStop && n != -1) {
         n = inputStream.read(buf)
         if (n != -1) {
-          fileAppender.write(buf, 0, n)
+          fileAppender.append(buf, 0, n)
         }
       }
     } catch {
       case e: Exception =>
-        logError(s"Error copying stream for $streamName", e)
+        logError(s"Error writing stream for $streamName", e)
     } finally {
       synchronized {
         stopped = true

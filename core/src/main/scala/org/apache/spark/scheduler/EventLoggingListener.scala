@@ -111,7 +111,7 @@ private[spark] class EventLoggingListener(
   /** Log the event as JSON. */
   private def logEvent(event: SparkListenerEvent, flushLogger: Boolean = false) {
     val eventJson = JsonProtocol.sparkEventToJson(event)
-    fileAppender.foreach(_.append(compact(render(eventJson))))
+    fileAppender.foreach(_.appendLine(compact(render(eventJson))))
     if (flushLogger) {
       fileAppender.foreach(_.flush())
     }

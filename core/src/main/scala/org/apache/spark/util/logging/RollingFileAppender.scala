@@ -21,9 +21,8 @@ import java.io.OutputStream
 import java.net.URI
 
 import org.apache.hadoop.fs.{FileSystem, Path, PathFilter}
-
-import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.logging.RollingFileAppender._
+import org.apache.spark.{Logging, SparkConf}
 
 /**
  * Writes data to the given file, and rolls over the file after the given interval.
@@ -37,59 +36,20 @@ private[spark] class RollingFileAppender(
     activeFileURI: URI,
     val rollingPolicy: RollingPolicy,
     conf: SparkConf,
-    fileSystem: FileSystem
-  ) extends OutputStream with Logging {
+    fileSystem: FileSystem,
+    outputStreamFactory: (Path, FileSystem) => OutputStream
+  ) extends FileAppender(activeFileURI, fileSystem, outputStreamFactory) with Logging {
 
   private val activeFile = new Path(activeFileURI)
   private val maxRetainedFiles = conf.getInt(RETAINED_FILES_PROPERTY, -1)
 
-  private var fileOutputStream: OutputStream = null
-
-  private def openIfNecessary(): Unit = {
-    if (fileOutputStream == null) {
-      fileOutputStream = HadoopOutputStream(new Path(activeFileURI), fileSystem)
-    }
-  }
-
-  private def rolloverIfNecessary(len: Long): Unit = {
+  override def append(b: Array[Byte], off: Int, len: Int): Unit = {
     if (rollingPolicy.shouldRollover(len)) {
       rollover()
       rollingPolicy.rolledOver()
     }
-  }
-
-  override def write(b: Int): Unit = {
-    openIfNecessary()
-    rolloverIfNecessary(1)
-    fileOutputStream.write(b)
+    super.append(b, off, len)
     rollingPolicy.bytesWritten(1)
-  }
-
-  override def write(b: Array[Byte]): Unit = {
-    openIfNecessary()
-    rolloverIfNecessary(b.length)
-    fileOutputStream.write(b)
-    rollingPolicy.bytesWritten(b.length)
-  }
-
-  override def write(b: Array[Byte], off: Int, len: Int): Unit = {
-    openIfNecessary()
-    rolloverIfNecessary(len)
-    fileOutputStream.write(b, off, len)
-    rollingPolicy.bytesWritten(len)
-  }
-
-  override def flush(): Unit = {
-    if (fileOutputStream != null) {
-      fileOutputStream.flush()
-    }
-  }
-
-  override def close(): Unit = {
-    if (fileOutputStream != null) {
-      fileOutputStream.close()
-      fileOutputStream = null
-    }
   }
 
   /** Rollover the file, by closing the output stream and moving it over */

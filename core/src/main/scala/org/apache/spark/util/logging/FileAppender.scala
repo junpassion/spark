@@ -17,26 +17,27 @@
 
 package org.apache.spark.util.logging
 
-import java.io.{OutputStream, File}
+import java.io.{File, OutputStream}
 import java.net.URI
 
 import com.google.common.base.Charsets.UTF_8
 import org.apache.hadoop.fs.{FileSystem, LocalFileSystem, Path}
-
-import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.IntParam
-import org.apache.spark.util.logging.FileAppender.DEFAULT_OUTPUT_STREAM_FACTORY
+import org.apache.spark.{Logging, SparkConf}
 
 private[spark] class FileAppender(
     pathURI: URI,
     fileSystem: FileSystem,
-    outputStreamFactory: (Path, FileSystem) => OutputStream = DEFAULT_OUTPUT_STREAM_FACTORY) {
+    outputStreamFactory: (Path, FileSystem) => OutputStream) {
 
   private val path: Path = new Path(pathURI)
   private var outputStream: OutputStream = null
+  // To ensure that the output stream opening function is called at least once, since it may have
+  // side-effects (like writing a metadata header or setting file permissions):
+  openIfNecessary()
 
-  final def append(string: String): Unit = {
-    val bytes = string.getBytes(UTF_8)
+  final def appendLine(string: String): Unit = {
+    val bytes = (string + '\n').getBytes(UTF_8)
     append(bytes, 0, bytes.length)
   }
 
@@ -70,7 +71,7 @@ private[spark] class FileAppender(
  */
 private[spark] object FileAppender extends Logging {
 
-  private[logging]
+  private[spark]
   def DEFAULT_OUTPUT_STREAM_FACTORY(path: Path, fileSystem: FileSystem): OutputStream = {
     HadoopOutputStream(path, fileSystem)
   }
@@ -116,7 +117,7 @@ private[spark] object FileAppender extends Logging {
       validatedParams.map {
         case (interval, pattern) =>
           new RollingFileAppender(file,
-            new TimeBasedRollingPolicy(interval, pattern), conf, fileSystem)
+            new TimeBasedRollingPolicy(interval, pattern), conf, fileSystem, outputStreamFactory)
       }.getOrElse {
         new FileAppender(file, fileSystem, outputStreamFactory)
       }
@@ -126,7 +127,7 @@ private[spark] object FileAppender extends Logging {
       rollingSizeBytes match {
         case IntParam(bytes) =>
           logInfo(s"Rolling executor logs enabled for $file with rolling every $bytes bytes")
-          new RollingFileAppender(file, new SizeBasedRollingPolicy(bytes), conf, fileSystem)
+          new RollingFileAppender(file, new SizeBasedRollingPolicy(bytes), conf, fileSystem, outputStreamFactory)
         case _ =>
           logWarning(
             s"Illegal size [$rollingSizeBytes] for rolling executor logs, rolling logs not enabled")
@@ -136,7 +137,7 @@ private[spark] object FileAppender extends Logging {
 
     rollingStrategy match {
       case "" =>
-        new FileAppender(file, fileSystem)
+        new FileAppender(file, fileSystem, outputStreamFactory)
       case "time" =>
         createTimeBasedAppender()
       case "size" =>
@@ -145,7 +146,7 @@ private[spark] object FileAppender extends Logging {
         logWarning(
           s"Illegal strategy [$rollingStrategy] for rolling executor logs, " +
             s"rolling logs not enabled")
-        new FileAppender(file, fileSystem)
+        new FileAppender(file, fileSystem, outputStreamFactory)
     }
   }
 }

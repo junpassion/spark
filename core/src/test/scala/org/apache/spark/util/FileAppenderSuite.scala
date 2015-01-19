@@ -32,6 +32,7 @@ import com.google.common.io.Files
 
 import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.logging._
+import org.apache.spark.util.logging.FileAppender.DEFAULT_OUTPUT_STREAM_FACTORY
 
 class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
 
@@ -64,7 +65,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val clock = new FakeClock()
     val appender = new RollingFileAppender(testFile.toURI,
       new TimeBasedRollingPolicy(rolloverIntervalMillis, s"--HH-mm-ss-SSSS", clock),
-      new SparkConf(), localFileSystem)
+      new SparkConf(), localFileSystem, DEFAULT_OUTPUT_STREAM_FACTORY)
 
     testRolling(appender, textToAppend, rolloverIntervalMillis, clock)
   }
@@ -75,7 +76,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val textToAppend = (1 to 3).map( _.toString * rolloverSize )
 
     val appender = new RollingFileAppender(testFile.toURI,
-      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), localFileSystem)
+      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), localFileSystem,
+      DEFAULT_OUTPUT_STREAM_FACTORY)
 
     val files = testRolling(appender, textToAppend, 0, new FakeClock)
     files.foreach { file =>
@@ -93,14 +95,15 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
       new SparkConf().set(RollingFileAppender.RETAINED_FILES_PROPERTY, retainedFiles.toString)
     val clock = new FakeClock()
     val appender = new RollingFileAppender(testFile.toURI,
-      new SizeBasedRollingPolicy(rolloverSize, false, clock), conf, localFileSystem)
+      new SizeBasedRollingPolicy(rolloverSize, false, clock), conf, localFileSystem,
+      DEFAULT_OUTPUT_STREAM_FACTORY)
 
     val logDirPath = new Path(testFile.getParent)
 
     // send data to appender through the input stream, and wait for the data to be written
     val allGeneratedFiles = new HashSet[String]()
     for (item <- (1 to retainedFiles + 2).map { _ => "x" * rolloverSize }) {
-      appender.append(item)
+      appender.appendLine(item)
       allGeneratedFiles ++= RollingFileAppender.getSortedRolledOverFilesPlusActiveFile(
         logDirPath, testFile.getName, localFileSystem).map(_.toString)
       clock.advance(10000)
@@ -197,7 +200,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     // send data to appender through the input stream, and wait for the data to be written
     val expectedText = textToAppend.mkString("")
     for (i <- 0 until textToAppend.size) {
-      appender.append(textToAppend(i))
+      appender.appendLine(textToAppend(i))
       clock.advance(delayBetweenTextsMillis)
     }
     logInfo("Data sent to appender")
