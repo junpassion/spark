@@ -69,7 +69,7 @@ private[spark] class StreamFileAppender(
     }
   }
 
-  //** Continuously read chunks from the input stream and append to the file */
+  /** Continuously read chunks from the input stream and append to the file */
   protected def appendStreamToFile() {
     try {
       logDebug("Started appending thread")

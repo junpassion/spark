@@ -127,7 +127,8 @@ private[spark] object FileAppender extends Logging {
       rollingSizeBytes match {
         case IntParam(bytes) =>
           logInfo(s"Rolling executor logs enabled for $file with rolling every $bytes bytes")
-          new RollingFileAppender(file, new SizeBasedRollingPolicy(bytes), conf, fileSystem, outputStreamFactory)
+          new RollingFileAppender(file,
+            new SizeBasedRollingPolicy(bytes), conf, fileSystem, outputStreamFactory)
         case _ =>
           logWarning(
             s"Illegal size [$rollingSizeBytes] for rolling executor logs, rolling logs not enabled")
