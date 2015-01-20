@@ -32,7 +32,7 @@ import org.json4s.jackson.JsonMethods._
 
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.util.logging.{HadoopOutputStream, FileAppender}
+import org.apache.spark.util.logging.{RollingFileAppender, HadoopOutputStream, FileAppender}
 import org.apache.spark.util.{JsonProtocol, Utils}
 import org.apache.spark.{Logging, SPARK_VERSION, SparkConf}
 
@@ -103,7 +103,8 @@ private[spark] class EventLoggingListener(
       initEventLog(outputStream, compressionCodec)
     }
 
-    fileAppender = Some(FileAppender(path.toUri, sparkConf, fileSystem, outputStreamFactory))
+    fileAppender = Some(FileAppender(path.toUri, sparkConf,
+      RollingFileAppender.EVENTLOG_CONF_PREFIX, fileSystem, outputStreamFactory))
 
     logInfo("Logging events to %s".format(logPath))
   }

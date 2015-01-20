@@ -28,7 +28,7 @@ import com.google.common.io.Files
 import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.deploy.DeployMessages.ExecutorStateChanged
 import org.apache.spark.deploy.{ApplicationDescription, ExecutorState}
-import org.apache.spark.util.logging.{StreamFileAppender, FileAppender}
+import org.apache.spark.util.logging.{RollingFileAppender, StreamFileAppender, FileAppender}
 
 /**
  * Manages the execution of one executor process.
@@ -139,14 +139,18 @@ private[spark] class ExecutorRunner(
         command.mkString("\"", "\" \"", "\""), "=" * 40)
 
       // Redirect its stdout and stderr to files
-      val stdout = new File(executorDir, "stdout")
-      stdoutAppender =
-        new StreamFileAppender(process.getInputStream, FileAppender(stdout, conf), "stdout")
+      stdoutAppender = {
+        val stdout = new File(executorDir, "stdout")
+        val appender = FileAppender(stdout, conf, RollingFileAppender.EXECUTOR_LOG_CONF_PREFIX)
+        new StreamFileAppender(process.getInputStream, appender, "stdout")
+      }
 
-      val stderr = new File(executorDir, "stderr")
-      Files.write(header, stderr, UTF_8)
-      stderrAppender =
-        new StreamFileAppender(process.getErrorStream, FileAppender(stderr, conf), "stderr")
+      stderrAppender = {
+        val stderr = new File(executorDir, "stderr")
+        Files.write(header, stderr, UTF_8)
+        val appender = FileAppender(stderr, conf, RollingFileAppender.EXECUTOR_LOG_CONF_PREFIX)
+        new StreamFileAppender(process.getErrorStream, appender, "stderr")
+      }
 
       // Wait for it to exit; executor may exit with code 0 (when driver instructs it to shutdown)
       // or with nonzero exit code

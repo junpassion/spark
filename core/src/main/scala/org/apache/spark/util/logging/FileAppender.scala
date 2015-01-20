@@ -77,23 +77,24 @@ private[spark] object FileAppender extends Logging {
   }
 
   /** Create the right appender based on Spark configuration */
-  def apply(file: File, conf: SparkConf): FileAppender = {
-    apply(file.toURI, conf, new LocalFileSystem())
+  def apply(file: File, conf: SparkConf, rollingConfPrefix: String): FileAppender = {
+    apply(file.toURI, conf, rollingConfPrefix, new LocalFileSystem())
   }
 
   /** Create the right appender based on Spark configuration */
   def apply(
     file: URI,
     conf: SparkConf,
+    rollingConfPrefix: String,
     fileSystem: FileSystem,
     outputStreamFactory: (Path, FileSystem) => OutputStream = DEFAULT_OUTPUT_STREAM_FACTORY
   ): FileAppender = {
 
     import org.apache.spark.util.logging.RollingFileAppender._
 
-    val rollingStrategy = conf.get(STRATEGY_PROPERTY, STRATEGY_DEFAULT)
-    val rollingSizeBytes = conf.get(SIZE_PROPERTY, STRATEGY_DEFAULT)
-    val rollingInterval = conf.get(INTERVAL_PROPERTY, INTERVAL_DEFAULT)
+    val rollingStrategy = conf.get(STRATEGY_PROPERTY(rollingConfPrefix), STRATEGY_DEFAULT)
+    val rollingSizeBytes = conf.get(SIZE_PROPERTY(rollingConfPrefix), STRATEGY_DEFAULT)
+    val rollingInterval = conf.get(INTERVAL_PROPERTY(rollingConfPrefix), INTERVAL_DEFAULT)
 
     def createTimeBasedAppender() = {
       val validatedParams: Option[(Long, String)] = rollingInterval match {
@@ -116,8 +117,9 @@ private[spark] object FileAppender extends Logging {
       }
       validatedParams.map {
         case (interval, pattern) =>
-          new RollingFileAppender(file,
-            new TimeBasedRollingPolicy(interval, pattern), conf, fileSystem, outputStreamFactory)
+          val policy = new TimeBasedRollingPolicy(interval, pattern)
+          new RollingFileAppender(file, policy, conf, rollingConfPrefix, fileSystem,
+            outputStreamFactory)
       }.getOrElse {
         new FileAppender(file, fileSystem, outputStreamFactory)
       }
@@ -128,7 +130,8 @@ private[spark] object FileAppender extends Logging {
         case IntParam(bytes) =>
           logInfo(s"Rolling executor logs enabled for $file with rolling every $bytes bytes")
           new RollingFileAppender(file,
-            new SizeBasedRollingPolicy(bytes), conf, fileSystem, outputStreamFactory)
+            new SizeBasedRollingPolicy(bytes), conf, rollingConfPrefix, fileSystem,
+              outputStreamFactory)
         case _ =>
           logWarning(
             s"Illegal size [$rollingSizeBytes] for rolling executor logs, rolling logs not enabled")

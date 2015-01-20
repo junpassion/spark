@@ -36,12 +36,13 @@ private[spark] class RollingFileAppender(
     activeFileURI: URI,
     val rollingPolicy: RollingPolicy,
     conf: SparkConf,
+    confPrefix: String,
     fileSystem: FileSystem,
     outputStreamFactory: (Path, FileSystem) => OutputStream
   ) extends FileAppender(activeFileURI, fileSystem, outputStreamFactory) with Logging {
 
   private val activeFile = new Path(activeFileURI)
-  private val maxRetainedFiles = conf.getInt(RETAINED_FILES_PROPERTY, -1)
+  private val maxRetainedFiles = conf.getInt(RETAINED_FILES_PROPERTY(confPrefix), -1)
 
   override def append(b: Array[Byte], off: Int, len: Int): Unit = {
     if (rollingPolicy.shouldRollover(len)) {
@@ -124,13 +125,17 @@ private[spark] class RollingFileAppender(
  * names of configurations that configure rolling file appenders.
  */
 private[spark] object RollingFileAppender {
-  val STRATEGY_PROPERTY = "spark.executor.logs.rolling.strategy"
+
+  val EVENTLOG_CONF_PREFIX = "spark.eventLog.rolling"
+  val EXECUTOR_LOG_CONF_PREFIX = "spark.executor.logs.rolling"
+
+  def STRATEGY_PROPERTY(prefix: String) = s"$prefix.strategy"
   val STRATEGY_DEFAULT = ""
-  val INTERVAL_PROPERTY = "spark.executor.logs.rolling.time.interval"
+  def INTERVAL_PROPERTY(prefix: String) = s"$prefix.time.interval"
   val INTERVAL_DEFAULT = "daily"
-  val SIZE_PROPERTY = "spark.executor.logs.rolling.size.maxBytes"
+  def SIZE_PROPERTY(prefix: String) = s"$prefix.size.maxBytes"
   val SIZE_DEFAULT = (1024 * 1024).toString
-  val RETAINED_FILES_PROPERTY = "spark.executor.logs.rolling.maxRetainedFiles"
+  def RETAINED_FILES_PROPERTY(prefix: String) = s"$prefix.maxRetainedFiles"
 
   /**
    * Get the sorted list of rolled over files. This assumes that the all the rolled

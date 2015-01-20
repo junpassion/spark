@@ -32,6 +32,7 @@ import com.google.common.io.Files
 
 import org.apache.spark.{Logging, SparkConf}
 import org.apache.spark.util.logging._
+import org.apache.spark.util.logging.RollingFileAppender._
 import org.apache.spark.util.logging.FileAppender.DEFAULT_OUTPUT_STREAM_FACTORY
 
 class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
@@ -50,7 +51,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
   test("basic stream file appender") {
     val testString = (1 to 1000).mkString(", ")
     val inputStream = new ByteArrayInputStream(testString.getBytes(UTF_8))
-    val appender = new StreamFileAppender(inputStream, FileAppender(testFile, new SparkConf()))
+    val appender = new StreamFileAppender(inputStream,
+      FileAppender(testFile, new SparkConf(), EXECUTOR_LOG_CONF_PREFIX))
     inputStream.close()
     appender.awaitTermination()
     assert(Files.toString(testFile, UTF_8) === testString)
@@ -65,7 +67,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val clock = new FakeClock()
     val appender = new RollingFileAppender(testFile.toURI,
       new TimeBasedRollingPolicy(rolloverIntervalMillis, s"--HH-mm-ss-SSSS", clock),
-      new SparkConf(), localFileSystem, DEFAULT_OUTPUT_STREAM_FACTORY)
+      new SparkConf(), EXECUTOR_LOG_CONF_PREFIX, localFileSystem, DEFAULT_OUTPUT_STREAM_FACTORY)
 
     testRolling(appender, textToAppend, rolloverIntervalMillis, clock)
   }
@@ -76,8 +78,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val textToAppend = (1 to 3).map( _.toString * rolloverSize )
 
     val appender = new RollingFileAppender(testFile.toURI,
-      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), localFileSystem,
-      DEFAULT_OUTPUT_STREAM_FACTORY)
+      new SizeBasedRollingPolicy(rolloverSize, false), new SparkConf(), EXECUTOR_LOG_CONF_PREFIX,
+      localFileSystem, DEFAULT_OUTPUT_STREAM_FACTORY)
 
     val files = testRolling(appender, textToAppend, 0, new FakeClock)
     files.foreach { file =>
@@ -92,11 +94,11 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     val retainedFiles = 10
     val rolloverSize = 1000
     val conf =
-      new SparkConf().set(RollingFileAppender.RETAINED_FILES_PROPERTY, retainedFiles.toString)
+      new SparkConf().set(RETAINED_FILES_PROPERTY(EXECUTOR_LOG_CONF_PREFIX), retainedFiles.toString)
     val clock = new FakeClock()
     val appender = new RollingFileAppender(testFile.toURI,
-      new SizeBasedRollingPolicy(rolloverSize, false, clock), conf, localFileSystem,
-      DEFAULT_OUTPUT_STREAM_FACTORY)
+      new SizeBasedRollingPolicy(rolloverSize, false, clock), conf, EXECUTOR_LOG_CONF_PREFIX,
+      localFileSystem, DEFAULT_OUTPUT_STREAM_FACTORY)
 
     val logDirPath = new Path(testFile.getParent)
 
@@ -137,7 +139,7 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
       }
 
       // Create and test file appender
-      val appender = FileAppender(testFile, conf)
+      val appender = FileAppender(testFile, conf, EXECUTOR_LOG_CONF_PREFIX)
       //assert(appender.getClass === classTag[ExpectedAppender].getClass)
       assert(appender.getClass.getSimpleName ===
         classTag[ExpectedAppender].runtimeClass.getSimpleName)
@@ -155,9 +157,11 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
 
     import RollingFileAppender._
 
-    def rollingStrategy(strategy: String) = Seq(STRATEGY_PROPERTY -> strategy)
-    def rollingSize(size: String) = Seq(SIZE_PROPERTY -> size)
-    def rollingInterval(interval: String) = Seq(INTERVAL_PROPERTY -> interval)
+    def rollingStrategy(strategy: String) =
+      Seq(STRATEGY_PROPERTY(EXECUTOR_LOG_CONF_PREFIX) -> strategy)
+    def rollingSize(size: String) = Seq(SIZE_PROPERTY(EXECUTOR_LOG_CONF_PREFIX) -> size)
+    def rollingInterval(interval: String) =
+      Seq(INTERVAL_PROPERTY(EXECUTOR_LOG_CONF_PREFIX) -> interval)
 
     val msInDay = 24 * 60 * 60 * 1000L
     val msInHour = 60 * 60 * 1000L
