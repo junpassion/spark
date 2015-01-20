@@ -103,7 +103,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     // send data to appender through the input stream, and wait for the data to be written
     val allGeneratedFiles = new HashSet[String]()
     for (item <- (1 to retainedFiles + 2).map { _ => "x" * rolloverSize }) {
-      appender.appendLine(item)
+      val bytes = item.getBytes(UTF_8)
+      appender.append(bytes, 0, bytes.length)
       allGeneratedFiles ++= RollingFileAppender.getSortedRolledOverFilesPlusActiveFile(
         logDirPath, testFile.getName, localFileSystem).map(_.toString)
       clock.advance(10000)
@@ -200,7 +201,8 @@ class FileAppenderSuite extends FunSuite with BeforeAndAfter with Logging {
     // send data to appender through the input stream, and wait for the data to be written
     val expectedText = textToAppend.mkString("")
     for (i <- 0 until textToAppend.size) {
-      appender.appendLine(textToAppend(i))
+      val bytes = textToAppend(i).getBytes(UTF_8)
+      appender.append(bytes, 0, bytes.length)
       clock.advance(delayBetweenTextsMillis)
     }
     logInfo("Data sent to appender")
