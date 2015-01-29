@@ -1028,6 +1028,7 @@ class SQLTests(ReusedPySparkTestCase):
         df = self.df
         df.registerTempTable("test")
         df_from_query = self.sqlCtx.sql("select key, values from test")
+        self.assertEquals(set(df.columns), set(("key", "value")))
         self.assertTrue(df_from_query.key is not None)
         self.assertTrue(df_from_query.value is not None)
 
