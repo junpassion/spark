@@ -1023,6 +1023,14 @@ class SQLTests(ReusedPySparkTestCase):
         self.assertEqual(self.testData, df.select(df.key, df.value).collect())
         self.assertEqual([Row(value='1')], df.where(df.key == 1).select(df.value).collect())
 
+    def test_column_selection_on_dataframes_created_by_queries(self):
+        # Regression test for SPARK-5462
+        df = self.df
+        df.registerTempTable("test")
+        df_from_query = self.sqlCtx.sql("select key, values from test")
+        self.assertTrue(df_from_query.key is not None)
+        self.assertTrue(df_from_query.value is not None)
+
     def test_aggregator(self):
         df = self.df
         g = df.groupBy()
