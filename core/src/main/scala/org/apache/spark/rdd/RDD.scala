@@ -98,6 +98,9 @@ abstract class RDD[T: ClassTag](
     this(oneParent.context , List(new OneToOneDependency(oneParent)))
 
   private[spark] def conf = sc.conf
+
+  val scope: Option[RDDScope] = RDDScope.currentScope.value
+
   // =======================================================================
   // Methods that should be implemented by subclasses of RDD
   // =======================================================================
