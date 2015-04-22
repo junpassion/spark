@@ -788,7 +788,12 @@ private[spark] class ExternalSorter[K, V, C](
     if (writer.isOpen) {
       writer.commitAndClose()
     }
-    blockManager.diskStore.getValues(writer.blockId, ser).get.asInstanceOf[Iterator[Product2[K, C]]]
+    if (writer.fileSegment().length > 0) {
+      blockManager.diskStore.getValues(writer.blockId, ser).get
+        .asInstanceOf[Iterator[Product2[K, C]]]
+    } else {
+      Iterator.empty
+    }
   }
 
   def stop(): Unit = {
