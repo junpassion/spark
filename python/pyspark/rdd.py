@@ -1688,11 +1688,8 @@ class RDD(object):
         keyed = self.mapPartitionsWithIndex(add_shuffle_key, preservesPartitioning=True)
         keyed._bypass_serializer = True
         with SCCallSiteSync(self.context) as css:
-            pairRDD = self.ctx._jvm.PairwiseRDD(
-                keyed._jrdd.rdd()).asJavaPairRDD()
-            jpartitioner = self.ctx._jvm.PythonPartitioner(numPartitions,
-                                                           id(partitionFunc))
-        jrdd = self.ctx._jvm.PythonRDD.valueOfPair(pairRDD.partitionBy(jpartitioner))
+            jrdd = self.ctx._jvm.PythonRDD.partitionBy(
+                keyed._jrdd, numPartitions, id(partitionFunc))
         rdd = RDD(jrdd, self.ctx, BatchedSerializer(outputSerializer))
         rdd.partitioner = partitioner
         return rdd

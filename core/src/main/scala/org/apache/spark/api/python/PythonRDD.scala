@@ -21,6 +21,8 @@ import java.io._
 import java.net._
 import java.util.{Collections, ArrayList => JArrayList, List => JList, Map => JMap}
 
+import org.apache.spark.serializer.KryoSerializer
+
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.language.existentials
@@ -35,7 +37,7 @@ import org.apache.spark._
 import org.apache.spark.api.java.{JavaPairRDD, JavaRDD, JavaSparkContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.input.PortableDataStream
-import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.{ShuffledRDD, RDD}
 import org.apache.spark.util.Utils
 
 import scala.util.control.NonFatal
@@ -301,21 +303,6 @@ private[spark] class PythonRDD(
 /** Thrown for exceptions in user Python code. */
 private class PythonException(msg: String, cause: Exception) extends RuntimeException(msg, cause)
 
-/**
- * Form an RDD[(Array[Byte], Array[Byte])] from key-value pairs returned from Python.
- * This is used by PySpark's shuffle operations.
- */
-private class PairwiseRDD(prev: RDD[Array[Byte]]) extends RDD[(Long, Array[Byte])](prev) {
-  override def getPartitions: Array[Partition] = prev.partitions
-  override val partitioner: Option[Partitioner] = prev.partitioner
-  override def compute(split: Partition, context: TaskContext): Iterator[(Long, Array[Byte])] =
-    prev.iterator(split, context).grouped(2).map {
-      case Seq(a, b) => (Utils.deserializeLongValue(a), b)
-      case x => throw new SparkException("PairwiseRDD: unexpected value: " + x)
-    }
-  val asJavaPairRDD : JavaPairRDD[Long, Array[Byte]] = JavaPairRDD.fromRDD(this)
-}
-
 private object SpecialLengths {
   val END_OF_DATA_SECTION = -1
   val PYTHON_EXCEPTION_THROWN = -2
@@ -334,13 +321,20 @@ private[spark] object PythonRDD extends Logging {
     }
   }
 
-  /**
-   * Return an RDD of values from an RDD of (Long, Array[Byte]), with preservePartitions=true
-   *
-   * This is useful for PySpark to have the partitioner after partitionBy()
-   */
-  def valueOfPair(pair: JavaPairRDD[Long, Array[Byte]]): JavaRDD[Array[Byte]] = {
-    pair.rdd.mapPartitions(it => it.map(_._2), true)
+  def partitionBy(
+      rddOfPairs: JavaRDD[Array[Byte]],
+      numPartitions: Int,
+      pyPartitionFunctionId: Long): JavaRDD[Array[Byte]] = {
+    val pairwiseRDD: RDD[(Long, Array[Byte])] = rddOfPairs.rdd.mapPartitions({ iter =>
+      iter.grouped(2).map {
+        case Seq(a, b) => (Utils.deserializeLongValue(a), b)
+        case x => throw new SparkException("PairwiseRDD: unexpected value: " + x)
+      }
+    }, preservesPartitioning = true)
+    val partitioned: ShuffledRDD[Long, Array[Byte], Array[Byte]] =
+      new ShuffledRDD(pairwiseRDD, new PythonPartitioner(numPartitions, pyPartitionFunctionId))
+    partitioned.setSerializer(new KryoSerializer(SparkEnv.get.conf))
+    partitioned.mapPartitions(it => it.map(_._2), preservesPartitioning = true).toJavaRDD()
   }
 
   /**
