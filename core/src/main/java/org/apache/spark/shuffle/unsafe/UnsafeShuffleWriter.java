@@ -24,8 +24,6 @@ import java.util.Iterator;
 import scala.Option;
 import scala.Product2;
 import scala.collection.JavaConversions;
-import scala.reflect.ClassTag;
-import scala.reflect.ClassTag$;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.io.ByteStreams;
@@ -39,23 +37,17 @@ import org.apache.spark.executor.ShuffleWriteMetrics;
 import org.apache.spark.network.util.LimitedInputStream;
 import org.apache.spark.scheduler.MapStatus;
 import org.apache.spark.scheduler.MapStatus$;
-import org.apache.spark.serializer.SerializationStream;
 import org.apache.spark.serializer.Serializer;
 import org.apache.spark.serializer.SerializerInstance;
 import org.apache.spark.shuffle.IndexShuffleBlockResolver;
 import org.apache.spark.shuffle.ShuffleMemoryManager;
 import org.apache.spark.shuffle.ShuffleWriter;
 import org.apache.spark.storage.BlockManager;
-import org.apache.spark.unsafe.PlatformDependent;
 import org.apache.spark.unsafe.memory.TaskMemoryManager;
 
 public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
 
   private final Logger logger = LoggerFactory.getLogger(UnsafeShuffleWriter.class);
-
-  @VisibleForTesting
-  static final int MAXIMUM_RECORD_SIZE = 1024 * 1024 * 64; // 64 megabytes
-  private static final ClassTag<Object> OBJECT_CLASS_TAG = ClassTag$.MODULE$.Object();
 
   private final BlockManager blockManager;
   private final IndexShuffleBlockResolver shuffleBlockResolver;
@@ -78,9 +70,6 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     public MyByteArrayOutputStream(int size) { super(size); }
     public byte[] getBuf() { return buf; }
   }
-
-  private MyByteArrayOutputStream serBuffer;
-  private SerializationStream serOutputStream;
 
   /**
    * Are we in the process of stopping? Because map tasks can call stop() with success = true
@@ -146,9 +135,8 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
       taskContext,
       4096, // Initial size (TODO: tune this!)
       partitioner.numPartitions(),
-      sparkConf);
-    serBuffer = new MyByteArrayOutputStream(1024 * 1024);
-    serOutputStream = serializer.serializeStream(serBuffer);
+      sparkConf,
+      serializer);
   }
 
   @VisibleForTesting
@@ -156,8 +144,6 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     if (sorter == null) {
       open();
     }
-    serBuffer = null;
-    serOutputStream = null;
     final SpillInfo[] spills = sorter.closeAndGetSpills();
     sorter = null;
     final long[] partitionLengths;
@@ -181,16 +167,7 @@ public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     }
     final K key = record._1();
     final int partitionId = partitioner.getPartition(key);
-    serBuffer.reset();
-    serOutputStream.writeKey(key, OBJECT_CLASS_TAG);
-    serOutputStream.writeValue(record._2(), OBJECT_CLASS_TAG);
-    serOutputStream.flush();
-
-    final int serializedRecordSize = serBuffer.size();
-    assert (serializedRecordSize > 0);
-
-    sorter.insertRecord(
-      serBuffer.getBuf(), PlatformDependent.BYTE_ARRAY_OFFSET, serializedRecordSize, partitionId);
+    sorter.insertRecord(key, record._2(), partitionId);
   }
 
   @VisibleForTesting

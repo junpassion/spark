@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.util.LinkedList;
 
 import scala.Tuple2;
+import scala.reflect.ClassTag;
+import scala.reflect.ClassTag$;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -36,6 +38,8 @@ import org.apache.spark.storage.*;
 import org.apache.spark.unsafe.PlatformDependent;
 import org.apache.spark.unsafe.memory.MemoryBlock;
 import org.apache.spark.unsafe.memory.TaskMemoryManager;
+import org.apache.spark.serializer.SerializationStream;
+import org.apache.spark.unsafe.io.SizeLimitedMemoryOutputStream;
 
 /**
  * An external sorter that is specialized for sort-based shuffle.
@@ -56,6 +60,8 @@ import org.apache.spark.unsafe.memory.TaskMemoryManager;
 final class UnsafeShuffleExternalSorter {
 
   private final Logger logger = LoggerFactory.getLogger(UnsafeShuffleExternalSorter.class);
+
+  private static final ClassTag<Object> OBJECT_CLASS_TAG = ClassTag$.MODULE$.Object();
 
   private static final int PAGE_SIZE = PackedRecordPointer.MAXIMUM_PAGE_SIZE_BYTES;
   @VisibleForTesting
@@ -89,6 +95,9 @@ final class UnsafeShuffleExternalSorter {
   private MemoryBlock currentPage = null;
   private long currentPagePosition = -1;
   private long freeSpaceInCurrentPage = 0;
+  private final SizeLimitedMemoryOutputStream dataPageOutputStream =
+    new SizeLimitedMemoryOutputStream(currentPage, currentPagePosition, freeSpaceInCurrentPage);
+  private SerializationStream serOutputStream;
 
   public UnsafeShuffleExternalSorter(
       TaskMemoryManager memoryManager,
@@ -97,7 +106,8 @@ final class UnsafeShuffleExternalSorter {
       TaskContext taskContext,
       int initialSize,
       int numPartitions,
-      SparkConf conf) throws IOException {
+      SparkConf conf,
+      SerializerInstance serializerInstance) throws IOException {
     this.memoryManager = memoryManager;
     this.shuffleMemoryManager = shuffleMemoryManager;
     this.blockManager = blockManager;
@@ -107,7 +117,9 @@ final class UnsafeShuffleExternalSorter {
     this.spillingEnabled = conf.getBoolean("spark.shuffle.spill", true);
     // Use getSizeAsKb (not bytes) to maintain backwards compatibility for units
     this.fileBufferSize = (int) conf.getSizeAsKb("spark.shuffle.file.buffer", "32k") * 1024;
+    this.serOutputStream = serializerInstance.serializeStream(dataPageOutputStream);
     openSorter();
+    allocateNewDataPage();
   }
 
   /**
@@ -243,6 +255,9 @@ final class UnsafeShuffleExternalSorter {
     taskContext.taskMetrics().incDiskBytesSpilled(spillInfo.file.length());
 
     openSorter();
+    // TODO: a neat optimization might be to recycle data pages across spills rather than freeing
+    // them only to immediately acquire new ones.
+    allocateNewDataPage();
   }
 
   private long getMemoryUsage() {
@@ -280,32 +295,12 @@ final class UnsafeShuffleExternalSorter {
   }
 
   /**
-   * Checks whether there is enough space to insert a new record into the sorter.
-   *
-   * @param requiredSpace the required space in the data page, in bytes, including space for storing
-   *                      the record size.
-
-   * @return true if the record can be inserted without requiring more allocations, false otherwise.
+   * Ensures that the sorting buffer has space to insert an additional record. If spilling is
+   * enabled, this will request additional memory from the {@link ShuffleMemoryManager} and spill if
+   * the requested memory can not be obtained. If spilling is disabled, then this will allocate
+   * memory without coordinating with the ShuffleMemoryManager.
    */
-  private boolean haveSpaceForRecord(int requiredSpace) {
-    assert (requiredSpace > 0);
-    // The sort array will automatically expand when inserting a new record, so we only need to
-    // worry about it having free space when spilling is enabled.
-    final boolean sortBufferHasSpace = !spillingEnabled || sorter.hasSpaceForAnotherRecord();
-    final boolean dataPageHasSpace = requiredSpace <= freeSpaceInCurrentPage;
-    return (sortBufferHasSpace && dataPageHasSpace);
-  }
-
-  /**
-   * Allocates more memory in order to insert an additional record. If spilling is enabled, this
-   * will request additional memory from the {@link ShuffleMemoryManager} and spill if the requested
-   * memory can not be obtained. If spilling is disabled, then this will allocate memory without
-   * coordinating with the ShuffleMemoryManager.
-   *
-   * @param requiredSpace the required space in the data page, in bytes, including space for storing
-   *                      the record size.
-   */
-  private void allocateSpaceForRecord(int requiredSpace) throws IOException {
+  private void ensureSpaceInSortBuffer() throws IOException {
     if (spillingEnabled && !sorter.hasSpaceForAnotherRecord()) {
       logger.debug("Attempting to expand sort buffer");
       final long oldSortBufferMemoryUsage = sorter.getMemoryUsage();
@@ -319,65 +314,76 @@ final class UnsafeShuffleExternalSorter {
         shuffleMemoryManager.release(oldSortBufferMemoryUsage);
       }
     }
-    if (requiredSpace > freeSpaceInCurrentPage) {
-      logger.debug("Required space {} is less than free space in current page ({}}", requiredSpace,
-        freeSpaceInCurrentPage);
-      // TODO: we should track metrics on the amount of space wasted when we roll over to a new page
-      // without using the free space at the end of the current page. We should also do this for
-      // BytesToBytesMap.
-      if (requiredSpace > PAGE_SIZE) {
-        throw new IOException("Required space " + requiredSpace + " is greater than page size (" +
-          PAGE_SIZE + ")");
-      } else {
-        if (spillingEnabled) {
-          final long memoryAcquired = shuffleMemoryManager.tryToAcquire(PAGE_SIZE);
-          if (memoryAcquired < PAGE_SIZE) {
-            shuffleMemoryManager.release(memoryAcquired);
-            spill();
-            final long memoryAcquiredAfterSpilling = shuffleMemoryManager.tryToAcquire(PAGE_SIZE);
-            if (memoryAcquiredAfterSpilling != PAGE_SIZE) {
-              shuffleMemoryManager.release(memoryAcquiredAfterSpilling);
-              throw new IOException("Can't allocate memory!");
-            }
-          }
-        }
-        currentPage = memoryManager.allocatePage(PAGE_SIZE);
-        currentPagePosition = currentPage.getBaseOffset();
-        freeSpaceInCurrentPage = PAGE_SIZE;
-        allocatedPages.add(currentPage);
-      }
-    }
   }
 
   /**
-   * Write a record to the shuffle sorter.
+   * Allocates a new data page in order to insert an additional record. If spilling is enabled, this
+   * will request additional memory from the {@link ShuffleMemoryManager} and spill if the requested
+   * memory can not be obtained. If spilling is disabled, then this will allocate memory without
+   * coordinating with the ShuffleMemoryManager.
    */
-  public void insertRecord(
-      Object recordBaseObject,
-      long recordBaseOffset,
-      int lengthInBytes,
-      int partitionId) throws IOException {
-    // Need 4 bytes to store the record length.
-    final int totalSpaceRequired = lengthInBytes + 4;
-    if (!haveSpaceForRecord(totalSpaceRequired)) {
-      allocateSpaceForRecord(totalSpaceRequired);
+  private void allocateNewDataPage() throws IOException {
+    // TODO: we should track metrics on the amount of space wasted when we roll over to a new page
+    // without using the free space at the end of the current page. We should also do this for
+    // BytesToBytesMap.
+    if (spillingEnabled) {
+      final long memoryAcquired = shuffleMemoryManager.tryToAcquire(PAGE_SIZE);
+      if (memoryAcquired < PAGE_SIZE) {
+        shuffleMemoryManager.release(memoryAcquired);
+        spill();
+        final long memoryAcquiredAfterSpilling = shuffleMemoryManager.tryToAcquire(PAGE_SIZE);
+        if (memoryAcquiredAfterSpilling != PAGE_SIZE) {
+          shuffleMemoryManager.release(memoryAcquiredAfterSpilling);
+          throw new IOException("Can't allocate memory!");
+        }
+      }
     }
+    currentPage = memoryManager.allocatePage(PAGE_SIZE);
+    currentPagePosition = currentPage.getBaseOffset();
+    freeSpaceInCurrentPage = PAGE_SIZE;
+    allocatedPages.add(currentPage);
+  }
 
-    final long recordAddress =
-      memoryManager.encodePageNumberAndOffset(currentPage, currentPagePosition);
-    final Object dataPageBaseObject = currentPage.getBaseObject();
-    PlatformDependent.UNSAFE.putInt(dataPageBaseObject, currentPagePosition, lengthInBytes);
-    currentPagePosition += 4;
-    freeSpaceInCurrentPage -= 4;
-    PlatformDependent.copyMemory(
-      recordBaseObject,
-      recordBaseOffset,
-      dataPageBaseObject,
-      currentPagePosition,
-      lengthInBytes);
-    currentPagePosition += lengthInBytes;
-    freeSpaceInCurrentPage -= lengthInBytes;
-    sorter.insertRecord(recordAddress, partitionId);
+  public void insertRecord(Object key, Object value, int partitionId) throws IOException {
+    ensureSpaceInSortBuffer();
+    doInsertRecord(key, value, partitionId, false);
+  }
+
+  private void doInsertRecord(
+      Object key,
+      Object value,
+      int partitionId,
+      boolean isReattempt) throws IOException {
+    // Reset the stream, reserving 4 bytes to store the record length.
+    final Object baseObject = currentPage.getBaseObject();
+    dataPageOutputStream.reset(baseObject, currentPagePosition + 4, freeSpaceInCurrentPage - 4);
+    try {
+      serOutputStream.writeKey(key, OBJECT_CLASS_TAG);
+      serOutputStream.writeValue(value, OBJECT_CLASS_TAG);
+      serOutputStream.flush();
+      final int recordLength = (int) dataPageOutputStream.bytesWritten();
+      assert (recordLength > 0);
+      final long recordAddress =
+        memoryManager.encodePageNumberAndOffset(currentPage, currentPagePosition);
+      PlatformDependent.UNSAFE.putInt(baseObject, currentPagePosition, recordLength);
+      currentPagePosition += recordLength + 4;
+      freeSpaceInCurrentPage -= recordLength + 4;
+      sorter.insertRecord(recordAddress, partitionId);
+    } catch (Exception e) {
+      System.out.println("Caught exception in insert record" + e);
+      if (e instanceof IOException) {
+        // This branch may actually be taken because serOutputStream throws unchecked IOExceptions
+        PlatformDependent.throwException(e);
+      } else if (isReattempt) {
+        // We already re-attempted to spill to a new data page, but the record was still too big.
+        throw (IOException) e;
+      } else {
+        // Assume that this was because there was not enough space in the current data page.
+        // Create a new page and try again.
+        allocateNewDataPage();
+        doInsertRecord(key, value, partitionId, true);
+      }
+    }
   }
 
   /**
@@ -390,6 +396,7 @@ final class UnsafeShuffleExternalSorter {
   public SpillInfo[] closeAndGetSpills() throws IOException {
     try {
       if (sorter != null) {
+        serOutputStream = null;
         writeSpillFile();
         freeMemory();
       }
